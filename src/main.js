@@ -216,8 +216,14 @@ function resetGame() {
 
 // ── 한 화면 맞춤 ─────────────────────────────────────────────
 // 내용이 뷰포트를 넘치면 화면 전체를 조금 줄여 스크롤 없이 다 보이게 한다.
-// 단, 리포트류는 가독성이 우선 — 살짝만 줄이고 스크롤을 허용한다.
-const READABLE_VIEWS = new Set(["report", "monthClose", "monthPlan", "final"]);
+// 가독성이 최우선 — 화면마다 줄여도 되는 하한을 따로 둔다.
+// 리포트류: 글씨가 우선, 스크롤 허용(최대 6%만 축소).
+// 창업준비/브리핑: 다음 버튼이 늘 보여야 하므로 한 화면에 담되 덜 줄인다(최대 18%).
+// 운영(미니게임): 조작을 위해 한 화면(최대 22%).
+const FIT_FLOOR = {
+  report: 0.94, monthClose: 0.94, monthPlan: 0.94, final: 0.94,
+  landing: 0.94, wizard: 0.82, brief: 0.82, operations: 0.78,
+};
 
 function fitScreenToViewport() {
   screen.style.zoom = "";
@@ -225,7 +231,7 @@ function fitScreenToViewport() {
   const available = window.innerHeight - chrome;
   const content = screen.scrollHeight;
   if (content > available + 2) {
-    const floor = READABLE_VIEWS.has(state.view) ? 0.88 : 0.68;
+    const floor = FIT_FLOOR[state.view] ?? 0.82;
     screen.style.zoom = String(Math.max(floor, available / content));
   }
 }

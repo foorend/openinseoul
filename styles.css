@@ -81,7 +81,7 @@ ol, ul { padding: 0; list-style: none; }
 .meta-label, .metric-label, .eyebrow, .section-kicker, .kicker,
 .card-label, .phase-label, .chip, .label {
   font-family: var(--mono);
-  font-size: 0.625rem;
+  font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -90,8 +90,8 @@ ol, ul { padding: 0; list-style: none; }
 
 .lede, .stage-description {
   color: var(--steam-dim);
-  font-size: 1rem;
-  line-height: 1.6;
+  font-size: 1.075rem;
+  line-height: 1.55;
   max-width: 62ch;
 }
 
@@ -528,8 +528,8 @@ ol, ul { padding: 0; list-style: none; }
 .district-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .choice-card.is-compact .choice-art { aspect-ratio: 2.4 / 1; }
 .choice-card.is-compact .choice-body { padding: 12px 14px 14px; gap: 5px; }
-.choice-card.is-compact .choice-name { font-size: 1.0625rem; }
-.choice-card.is-compact .choice-sub { font-size: 0.8125rem; }
+.choice-card.is-compact .choice-name { font-size: 1.125rem; }
+.choice-card.is-compact .choice-sub { font-size: 0.875rem; }
 
 .district-detail {
   position: sticky;
@@ -1111,7 +1111,7 @@ ol, ul { padding: 0; list-style: none; }
 .report-kpi strong { font-family: var(--mono); font-size: 1.5rem; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .report-kpi strong.positive { color: var(--jade); }
 .report-kpi strong.negative { color: var(--clay); }
-.kpi-delta { font-family: var(--mono); font-size: 0.625rem; color: var(--faint); }
+.kpi-delta { font-family: var(--mono); font-size: 0.6875rem; color: var(--faint); }
 .kpi-delta.good { color: var(--jade); }
 .kpi-delta.bad { color: var(--clay); }
 
@@ -1133,14 +1133,14 @@ ol, ul { padding: 0; list-style: none; }
 
 .report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
 .report-panel { display: grid; gap: 8px; align-content: start; padding: 13px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
-.report-panel h2 { font-size: 1.125rem; font-weight: 700; }
+.report-panel h2 { font-size: 1.25rem; font-weight: 700; }
 
 .funnel-chart { display: grid; gap: 7px; }
-.funnel-step { display: grid; grid-template-columns: 74px 1fr 54px; align-items: center; gap: 10px; font-size: 0.75rem; }
+.funnel-step { display: grid; grid-template-columns: 82px 1fr 60px; align-items: center; gap: 10px; font-size: 0.8125rem; }
 .funnel-step span { color: var(--muted); }
-.funnel-track { height: 16px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.funnel-track { height: 18px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
 .funnel-track i { display: block; height: 100%; background: linear-gradient(90deg, var(--crema), var(--copper)); }
-.funnel-step strong { font-family: var(--mono); font-size: 0.75rem; text-align: right; font-variant-numeric: tabular-nums; }
+.funnel-step strong { font-family: var(--mono); font-size: 0.8125rem; text-align: right; font-variant-numeric: tabular-nums; }
 
 .loss-list { display: grid; gap: 8px; }
 .loss-item { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 11px; padding: 11px 13px; border: 1px solid var(--line-soft); border-radius: var(--radius); background: var(--surface-2); }
@@ -1547,8 +1547,8 @@ ol, ul { padding: 0; list-style: none; }
 }
 .repday:hover { border-color: var(--crema-dim); }
 .repday.is-selected { border-color: var(--crema); background: rgba(217, 164, 65, 0.1); }
-.repday b { font-size: 0.875rem; }
-.repday span { font-size: 0.6875rem; line-height: 1.45; color: var(--muted); }
+.repday b { font-size: 0.9375rem; }
+.repday span { font-size: 0.8125rem; line-height: 1.5; color: var(--muted); }
 
 .cash-warning { padding: 10px 12px; border-left: 2px solid var(--clay); background: rgba(194, 90, 74, 0.1); font-size: 0.75rem; line-height: 1.5; color: var(--steam-dim); }
 
@@ -1842,14 +1842,14 @@ ol, ul { padding: 0; list-style: none; }
   grid-template-columns: 1fr 54px auto;
   align-items: baseline;
   gap: 10px;
-  padding: 5px 15px;
+  padding: 6px 15px;
   border-bottom: 1px dotted var(--line-soft);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
 }
 .ledger-line span { color: var(--steam-dim); }
-.ledger-line small { display: block; margin-top: 1px; font-size: 0.625rem; color: var(--faint); }
-.ledger-line em { font-family: var(--mono); font-size: 0.6875rem; font-style: normal; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
-.ledger-line b { font-family: var(--mono); font-size: 0.8125rem; text-align: right; font-variant-numeric: tabular-nums; }
+.ledger-line small { display: block; margin-top: 1px; font-size: 0.6875rem; color: var(--faint); }
+.ledger-line em { font-family: var(--mono); font-size: 0.75rem; font-style: normal; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ledger-line b { font-family: var(--mono); font-size: 0.875rem; text-align: right; font-variant-numeric: tabular-nums; }
 .ledger-line.is-sub { padding-left: 28px; }
 .ledger-line.is-sub span { color: var(--muted); }
 .ledger-line.is-plus b { color: var(--jade); }
@@ -1992,8 +1992,8 @@ ol, ul { padding: 0; list-style: none; }
 .stat-dots i.on { background: var(--crema); }
 .capital-list { display: grid; gap: 10px; }
 .capital-list .repday { padding: 13px 15px; }
-.capital-list .repday b { font-size: 1rem; }
-.capital-list .repday span { font-size: 0.78rem; }
+.capital-list .repday b { font-size: 1.125rem; }
+.capital-list .repday span { font-size: 0.875rem; line-height: 1.5; }
 
 /* (자동 버튼 상태 스타일은 아래 신규 블록에서 정의) */
 

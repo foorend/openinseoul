@@ -32,7 +32,7 @@ const STEPS = [
   },
   {
     id: "bar",
-    target: '[data-station="bar"]',
+    target: '.station-group [data-station="bar"]',
     title: "{bar} — 만드는 자리 (직접 해봅시다)",
     body: "미니게임은 자동으로 열리지 않습니다 — {bar} 버튼을 클릭하거나 키보드 1을 눌러야만 시작됩니다. 지금 눌러서 짧은 연습을 해보세요: ←→로 머신·스티머·오븐 레인을 오가고, 주문서에 찍힌 Q W E R을 순서대로 누르면 완성입니다.",
     action: "{bar}을(를) 눌러 연습 시작",
@@ -41,7 +41,7 @@ const STEPS = [
   },
   {
     id: "hall",
-    target: '[data-station="hall"]',
+    target: '.station-group [data-station="hall"]',
     title: "{hall} — 치우는 자리 (직접 해봅시다)",
     body: "이번엔 {hall}입니다 — 클릭하거나 키보드 2. ←→로 테이블을 오가고, 말풍선에 찍힌 키를 먼저 누른 뒤(주문서 Q · 서빙 W · 응대 E · 정리 R) 스페이스를 두 번 연타하면 처리됩니다. 손님 많은 시간대엔 말풍선이 쏟아집니다.",
     action: "{hall}을(를) 눌러 연습 시작",
@@ -50,7 +50,7 @@ const STEPS = [
   },
   {
     id: "door",
-    target: '[data-station="door"]',
+    target: '.station-group [data-station="door"]',
     title: "{door} — 불러오는 자리 (직접 해봅시다)",
     body: "마지막으로 {door} — 클릭하거나 키보드 3. ←→만으로 조작하는 전단지 돌리기입니다. 행인은 잡으면 매출, 진상은 잡으면 돈 안 내고 짜증만, 리뷰어는 복불복. 피크 시간대나 성수기 달엔 사람이 훨씬 많이 쏟아집니다 — 화면 위 표시를 보세요.",
     action: "{door}을(를) 눌러 연습 시작",
