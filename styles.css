@@ -2817,3 +2817,30 @@ canvas { image-rendering: pixelated; }
   color: var(--muted);
 }
 .hero-subcopy em { font-style: normal; font-weight: 700; color: var(--crema-soft); }
+
+/* 스탯 헤더 — 배분해야 할 포인트가 있다는 걸 놓치지 않게 크게 */
+.stat-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 20px 0 10px;
+  padding: 9px 13px;
+  border: 1px solid var(--crema-dim);
+  border-left: 3px solid var(--crema);
+  border-radius: var(--radius);
+  background: rgba(217, 164, 65, 0.09);
+}
+.stat-heading strong { font-size: 1.0625rem; font-weight: 800; letter-spacing: -0.02em; color: var(--steam); }
+.stat-heading span { font-size: 0.8125rem; color: var(--steam-dim); }
+.stat-heading b {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 1.375rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.stat-heading b.is-warn { color: var(--crema); animation: stat-points-pulse 1.6s ease-in-out infinite; }
+.stat-heading b.is-good { color: var(--jade); }
+.stat-heading.is-done { border-color: var(--line); background: var(--surface-2); }
+@keyframes stat-points-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .stat-heading b.is-warn { animation: none; } }

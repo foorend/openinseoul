@@ -599,7 +599,11 @@ function renderWizard() {
                 <i style="background:${hairOption.color}"></i><span>${hairOption.name}</span>
               </button>`).join("")}
           </div>
-          <span class="meta-label" style="margin-top:16px">스탯 — 남은 포인트 <b class="${remaining === 0 ? "is-good" : "is-warn"}">${remaining}</b></span>
+          <div class="stat-heading ${remaining === 0 ? "is-done" : ""}">
+            <strong>스탯</strong>
+            <span>남은 포인트</span>
+            <b class="${remaining === 0 ? "is-good" : "is-warn"}">${remaining}</b>
+          </div>
           <div class="stat-rows">
             ${OWNER_STAT_DEFS.map((stat) => {
               const value = state.ownerStats[stat.id];
