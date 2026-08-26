@@ -2616,30 +2616,30 @@ canvas { image-rendering: pixelated; }
 /* ── 자본 트래커: 이전 → 사유 → 현재 ─────────────── */
 .capital-tracker {
   display: grid;
-  gap: 6px;
+  gap: 7px;
   justify-items: end;
-  max-width: 300px;
+  max-width: 340px;
   text-align: right;
 }
-.ct-now { display: grid; justify-items: end; }
-.ct-now span { font-size: 10.5px; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
-.ct-now strong { font-family: var(--mono); font-size: 18px; font-variant-numeric: tabular-nums; }
+.ct-now { display: grid; justify-items: end; gap: 2px; }
+.ct-now span { font-size: 12.5px; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+.ct-now strong { font-family: var(--mono); font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ct-now strong.is-danger { color: var(--clay); }
 .capital-tracker.is-flash .ct-now strong { animation: budget-hit .7s ease; }
 .ct-diff {
   display: grid;
-  gap: 3px;
+  gap: 4px;
   justify-items: end;
-  padding: 7px 10px;
+  padding: 9px 13px;
   border: 1px solid var(--line-soft);
-  border-right: 2px solid var(--clay);
+  border-right: 3px solid var(--clay);
   background: color-mix(in srgb, var(--clay) 7%, transparent);
-  font-size: 11px;
+  font-size: 14px;
   color: var(--steam-dim);
 }
-.ct-diff em { font-style: normal; color: var(--muted); font-size: 10px; }
-.ct-diff b { color: var(--clay); font-variant-numeric: tabular-nums; margin-left: 6px; }
-.ct-loan { font-size: 10.5px; color: var(--crema); font-variant-numeric: tabular-nums; }
+.ct-diff em { font-style: normal; color: var(--muted); font-size: 12.5px; }
+.ct-diff b { color: var(--clay); font-variant-numeric: tabular-nums; margin-left: 6px; font-size: 15px; }
+.ct-loan { font-size: 12.5px; color: var(--crema); font-variant-numeric: tabular-nums; }
 .ct-loan-btn {
   padding: 6px 10px;
   border: 1px dashed var(--crema);
