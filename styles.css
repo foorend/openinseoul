@@ -2629,3 +2629,125 @@ canvas { image-rendering: pixelated; }
   cursor: pointer;
 }
 .ct-loan-btn small { display: block; font-weight: 400; color: var(--muted); font-size: 9.5px; }
+
+/* ═══ 미니게임 도크 — 왼쪽이 미니게임의 집이다 ═══ */
+.ops-grid { transition: grid-template-columns 0.28s ease; }
+/* 미니게임이 시작되면 좌우 크기를 맞바꾼다 — 지금 미니게임 중이라는 신호 */
+@media (min-width: 1181px) {
+  .ops-grid.arcade-live { grid-template-columns: 5fr 2fr minmax(178px, 1fr); }
+}
+/* 좁은 화면 — 미니게임 자리가 전체 폭이므로 세로로 크게 키워준다 */
+@media (max-width: 1180px) {
+  .ops-grid.arcade-live .interior-column { grid-template-rows: auto minmax(440px, 62vh) auto; }
+}
+.ops-grid.arcade-live .scene-panel { opacity: 0.88; }
+.ops-grid.arcade-live .interior-head { border-color: var(--crema-dim, #d9a441); }
+.ops-grid.arcade-live .interior-head .meta-label::after { content: " · LIVE"; color: #d9a441; }
+
+.arcade-dock { display: grid; }
+
+.arcade-home {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+  height: 100%;
+  padding: 14px;
+}
+.arcade-home[hidden] { display: none; }
+.arcade-home-lede {
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  text-align: center;
+  color: var(--steam);
+}
+.arcade-home-lede b { color: #f0c674; font-family: var(--pixel-display); }
+.arcade-home-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  color: var(--steam);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 4px 4px 0 rgba(8, 5, 3, 0.5);
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+.arcade-home-card:hover { transform: translate(-1px, -1px); border-color: #d9a441; }
+.arcade-home-card .ah-key {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid #8a5f1e;
+  background: #d9a441;
+  color: #2c2418;
+  font-family: var(--pixel-display);
+  font-size: 14px;
+}
+.arcade-home-card .ah-icon { flex: none; font-size: 22px; }
+.arcade-home-card .ah-body { display: grid; gap: 3px; }
+.arcade-home-card .ah-body b { font-size: 0.875rem; font-family: var(--pixel-display); font-weight: 400; }
+.arcade-home-card .ah-body span { font-size: 0.71875rem; color: var(--muted); line-height: 1.4; }
+.arcade-home-card .ah-body i { font-style: normal; color: #f0c674; font-family: var(--pixel-display); }
+.arcade-home-note {
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--faint);
+}
+
+/* 임베드 아케이드 — 전체화면 대신 도크 안에 산다 */
+.arcade-layer.is-embedded {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  background: rgba(10, 7, 5, 0.97);
+  animation: arcade-in 0.22s steps(4);
+}
+.arcade-layer.is-embedded .arcade-hud { padding: 8px 12px; flex-wrap: wrap; gap: 6px; }
+.arcade-layer.is-embedded .arcade-title h3 { font-size: 15px; }
+.arcade-layer.is-embedded .arcade-stage { padding: 8px; }
+.arcade-layer.is-embedded .arcade-stage canvas {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
+.arcade-layer.is-embedded .arcade-legend { padding: 7px 10px; font-size: 10.5px; gap: 5px 12px; }
+
+.arcade-crowd {
+  padding: 4px 10px;
+  border: 2px solid rgba(240, 198, 116, 0.55);
+  background: rgba(240, 198, 116, 0.12);
+  color: #f0c674;
+  font-family: var(--pixel-display);
+  font-size: 12px;
+  animation: crowd-pulse 1.6s ease-in-out infinite;
+}
+@keyframes crowd-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+/* 튜토리얼 연습 중 — 카드·마스크가 비켜준다 */
+.tutorial-layer.is-waiting .tutorial-card,
+.tutorial-layer.is-waiting .tutorial-mask,
+.tutorial-layer.is-waiting .tutorial-ring {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* 장사 노트 배지 — 월 계획 메뉴 카드에 붙는 ◎/△ 기록 */
+.fit-badge { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
+.fit-badge b { font-size: 0.6875rem; font-weight: 800; }
+.fit-badge .is-great { color: #5fa57c; }
+.fit-badge .is-bad { color: #c25a4a; }
+
+/* 마감 리포트에 박힌 장사 노트 */
+.notebook-panel { margin-top: 14px; }
+.notebook-panel .notebook-lede { margin: 6px 0 12px; font-size: 0.8125rem; line-height: 1.6; color: var(--muted); }

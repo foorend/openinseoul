@@ -1205,6 +1205,82 @@ const BUSINESS_ART = {
   },
 };
 
+// ── 집기 일러스트 — 커피가 아니라 머신이 주인공이다 ──────────
+function grinder(ctx, x, y, scale, tone) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = tone;
+  roundRect(ctx, -9, -18, 18, 30, 3);
+  ctx.fill();
+  // 호퍼 (원두통)
+  ctx.fillStyle = alpha("#CFE3EA", 0.35);
+  ctx.beginPath();
+  ctx.moveTo(-11, -18); ctx.lineTo(11, -18); ctx.lineTo(7, -34); ctx.lineTo(-7, -34);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#4A3320";
+  ctx.beginPath();
+  ctx.moveTo(-8, -20); ctx.lineTo(8, -20); ctx.lineTo(5, -31); ctx.lineTo(-5, -31);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#12151A";
+  ctx.fillRect(-5, 0, 10, 7);
+  ctx.restore();
+}
+
+function equipmentStage(ctx, w, h, t, { groups, tone, worn = false, shine = false }) {
+  frame(ctx, w, h, "#241C17", "#100C0A");
+  lightCone(ctx, w * 0.5, 0, w * 0.75, h * 0.85, PALETTE.crema, shine ? 0.16 : 0.1);
+  floor(ctx, w, h, h * 0.88, "#3A2C22");
+  barCounter(ctx, w, h, w * 0.1, w * 0.8, h * 0.6);
+  espressoMachine(ctx, w * 0.42, h * 0.56, 0.9, groups, t, true);
+  grinder(ctx, w * 0.76, h * 0.56, 1.0, tone);
+  // 제빙기·냉장
+  ctx.fillStyle = "#2E3236";
+  roundRect(ctx, w * 0.14, h * 0.44, w * 0.1, h * 0.14, 3);
+  ctx.fill();
+  ctx.fillStyle = alpha("#CFE3EA", 0.25);
+  ctx.fillRect(w * 0.155, h * 0.46, w * 0.07, 3);
+  if (worn) {
+    // 중고 — 녹·기스·테이프
+    ctx.fillStyle = alpha("#8A5326", 0.55);
+    ctx.fillRect(w * 0.33, h * 0.5, 9, 4);
+    ctx.fillRect(w * 0.5, h * 0.46, 6, 3);
+    ctx.strokeStyle = alpha("#E8DCCE", 0.35);
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.37, h * 0.42); ctx.lineTo(w * 0.41, h * 0.47);
+    ctx.stroke();
+  }
+  if (shine) {
+    // 하이엔드 — 크롬 광 스윕
+    const sweep = ((t * 0.5) % 1) * w;
+    const g = ctx.createLinearGradient(sweep - 30, 0, sweep + 30, 0);
+    g.addColorStop(0, "rgba(255,255,255,0)");
+    g.addColorStop(0.5, "rgba(255,255,255,0.16)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(w * 0.18, h * 0.34, w * 0.5, h * 0.24);
+    glowDot(ctx, w * 0.42, h * 0.44, 40, PALETTE.crema, 0.3);
+  }
+}
+
+const EQUIPMENT_ART = {
+  used(ctx, w, h, t) {
+    equipmentStage(ctx, w, h, t, { groups: 1, tone: "#4A4038", worn: true });
+    caption(ctx, w, "중고 1그룹 · 손때 묻은 세트", PALETTE.steam);
+  },
+  standard(ctx, w, h, t) {
+    equipmentStage(ctx, w, h, t, { groups: 2, tone: "#3A4148" });
+    caption(ctx, w, "신품 2그룹 · 표준 구성", PALETTE.steam);
+  },
+  premium(ctx, w, h, t) {
+    equipmentStage(ctx, w, h, t, { groups: 3, tone: "#2E3A44", shine: true });
+    caption(ctx, w, "수입 3그룹 · 풀 옵션", PALETTE.crema);
+  },
+};
+
 const REGISTRY = {
   district: DISTRICT_ART,
   business: BUSINESS_ART,
@@ -1212,6 +1288,7 @@ const REGISTRY = {
   bean: BEAN_ART,
   role: ROLE_ART,
   menu: MENU_ART,
+  equipment: EQUIPMENT_ART,
 };
 
 export function drawIllustration(ctx, w, h, kind, id, time, extra) {

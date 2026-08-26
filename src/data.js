@@ -173,13 +173,17 @@ export const BEAN_TIERS = [
 export const SUPPLY_MODES = [
   {
     id: "bake", name: "직접 굽는다", icon: "🥐",
-    description: "베이커가 매일 아침 굽습니다. 재료비가 더 들고 품절도 나지만, 갓 구운 것이 무기가 됩니다.",
+    description: "베이커가 매일 아침 굽습니다. 오븐·발효기·작업대가 추가로 들어가고 그만큼 주방이 좌석을 먹지만, 갓 구운 것이 무기가 됩니다.",
     costMultiplier: 1.0, quality: 0.06, needsBaker: true,
+    // 베이킹 집기 — 오븐·발효기·작업대. 지금 결제되고, 주방이 커져 좌석 4석을 먹는다.
+    gearCost: 600, gearLabel: "베이킹 집기 (오븐·발효기·작업대)", seatsDelta: 0,
   },
   {
     id: "buy", name: "납품받는다", icon: "📦",
-    description: "쿠키·치즈케이크를 완제품으로 받습니다. 베이커 인건비가 통째로 사라지고 원가도 낮지만, 맛의 차별점이 없습니다.",
+    description: "쿠키·치즈케이크를 완제품으로 받습니다. 베이커 인건비가 통째로 사라지고 주방이 작아 좌석이 늘지만, 맛의 차별점이 없습니다.",
     costMultiplier: 0.72, quality: -0.05, needsBaker: false,
+    // 쇼케이스만 있으면 된다 — 주방이 작아지는 만큼 좌석이 +4석
+    gearCost: 250, gearLabel: "쇼케이스·냉장 진열대", seatsDelta: 4,
   },
 ];
 

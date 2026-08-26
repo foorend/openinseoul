@@ -99,18 +99,41 @@ function paintPerson(ctx, { x, y, scale = 1, body = "#666", hair, skin, face = n
   ctx.restore();
 }
 
+// 튜토리얼 연습용 — 진짜 시뮬레이션에 손대지 않는 무해한 대역.
+// 미니게임이 부르는 훅을 전부 빈손으로 받아낸다.
+function practiceSimFor(sim) {
+  return {
+    menus: sim.menus,
+    format: sim.format,
+    tables: [],
+    activeAgents: [],
+    ownerLook: sim.ownerLook,
+    kitchenLanes: sim.kitchenLanes ?? [],
+    injectWalkin: () => ({ reviewLucky: Math.random() < 0.5 }),
+    jinsangWalkin: () => {},
+    expressServe: () => {},
+    expressClean: () => {},
+    attendCustomer: () => {},
+    hallDelight: () => {},
+  };
+}
+
 class ArcadeShell {
-  constructor({ sim, sounds, onEnd, title, kicker, legend, w, h, duration }) {
-    this.sim = sim;
+  constructor({ sim, sounds, onEnd, title, kicker, legend, w, h, duration, mount, practice, crowd }) {
+    this.practice = !!practice;
+    this.sim = this.practice ? practiceSimFor(sim) : sim;
     this.sounds = sounds;
     this.onEnd = onEnd ?? (() => {});
+    this.mount = mount ?? null;
+    // 붐비는 정도 — 페이즈(피크)와 달(성수기)이 곱해진다. 라벨은 HUD에 뜬다.
+    this.crowd = crowd ?? { factor: 1, label: null };
     this.title = title;
     this.kicker = kicker;
     this.legendHtml = legend;
     this.W = w;
     this.H = h;
-    this.duration = duration;
-    this.timeLeft = duration;
+    this.duration = this.practice ? 10 : duration;
+    this.timeLeft = this.duration;
     this.keys = { left: false, right: false, space: false };
     this.floaters = [];
     this.particles = [];
@@ -126,10 +149,11 @@ class ArcadeShell {
 
   start() {
     this.root = document.createElement("div");
-    this.root.className = "arcade-layer";
+    this.root.className = `arcade-layer${this.mount ? " is-embedded" : ""}${this.practice ? " is-practice" : ""}`;
     this.root.innerHTML = `
       <header class="arcade-hud">
-        <div class="arcade-title"><span class="meta-label">${this.kicker}</span><h3>${this.title}</h3></div>
+        <div class="arcade-title"><span class="meta-label">${this.practice ? "TUTORIAL / PRACTICE" : this.kicker}</span><h3>${this.title}${this.practice ? " 연습" : ""}</h3></div>
+        ${this.crowd.label ? `<span class="arcade-crowd">${this.crowd.label}</span>` : ""}
         <div class="arcade-meters">
           <span class="arcade-time" id="arcade-time">${this.duration}s</span>
           <span class="arcade-score" id="arcade-score"></span>
@@ -138,7 +162,7 @@ class ArcadeShell {
       </header>
       <div class="arcade-stage"><canvas id="arcade-canvas"></canvas></div>
       <footer class="arcade-legend">${this.legendHtml}</footer>`;
-    document.body.append(this.root);
+    (this.mount ?? document.body).append(this.root);
     this.canvas = this.root.querySelector("#arcade-canvas");
     // 미니게임은 고해상도 — DPR 풀 해상도에 안티앨리어싱 그대로
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -289,17 +313,22 @@ class ArcadeShell {
     this.root.insertAdjacentHTML("beforeend", `
       <div class="arcade-result">
         <div class="arcade-result-card">
-          <h3>${this.title} 종료</h3>
+          <h3>${this.title} ${this.practice ? "연습 끝!" : "종료"}</h3>
           <div class="arcade-result-rows">
             ${rows.map((row) => `<div class="${row.bad ? "is-bad" : ""}"><span>${row.label}</span><b>${row.value}</b></div>`).join("")}
+            ${this.practice ? `<div><span>연습 결과</span><b>매출에 반영되지 않았습니다</b></div>` : ""}
           </div>
-          <button class="cta" id="arcade-close" type="button"><span>매장으로 돌아가기</span></button>
+          <button class="cta" id="arcade-close" type="button"><span>${this.practice ? "튜토리얼 계속" : "매장으로 돌아가기"}</span></button>
         </div>
       </div>`);
     this.root.querySelector("#arcade-close").addEventListener("click", () => this.dispose());
+    // 연습판은 잠깐 보여주고 스스로 닫힌다 — 튜토리얼 흐름이 끊기지 않게
+    if (this.practice) setTimeout(() => this.dispose(), 2200);
   }
 
   dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
     cancelAnimationFrame(this.raf);
     window.removeEventListener("keydown", this.keydown, true);
     window.removeEventListener("keyup", this.keyup, true);
@@ -416,7 +445,8 @@ export class FlyerRun extends ArcadeShell {
     this.nextSpawn -= dt;
     if (this.nextSpawn <= 0) {
       this.spawnPerson();
-      this.nextSpawn = 0.55 + Math.random() * 0.45;
+      // 피크 시간대·성수기 달에는 거리에 사람이 그만큼 더 쏟아진다
+      this.nextSpawn = (0.55 + Math.random() * 0.45) / Math.max(0.5, this.crowd.factor);
     }
     const playerY = this.H - 80;
     for (const person of this.people) {
@@ -568,7 +598,8 @@ export class KitchenRush extends ArcadeShell {
     if (this.nextOrder <= 0) {
       this.spawnOrder();
       const queue = this.sim.activeAgents.filter((agent) => agent.state === "queueing").length;
-      this.nextOrder = Math.max(0.8, 2.0 - queue * 0.12);
+      // 실제 대기줄 + 붐비는 시간대가 주문 유입 속도를 정한다
+      this.nextOrder = Math.max(0.7, (2.0 - queue * 0.12) / Math.max(0.6, this.crowd.factor));
     }
 
     // QWER 입력 — 서 있는 레인의 주문 콤보를 순서대로
@@ -737,12 +768,13 @@ export class KitchenRush extends ArcadeShell {
 }
 
 // ─── 홀 서빙 ────────────────────────────────────────────────
-// 내 매장의 실제 테이블 수만큼 나온다. ←→로 이동, 스페이스 연타로 처리.
+// 내 매장의 실제 테이블 수만큼 나온다. ←→로 이동,
+// 말풍선에 찍힌 키(주문서 Q · 서빙 W · 응대 E · 정리 R)를 먼저 누른 뒤 스페이스 2연타.
 const HALL_TASKS = [
-  { id: "call", icon: "🖐", label: "응대", taps: 2 },
-  { id: "order", icon: "📝", label: "주문서", taps: 3 },
-  { id: "serve", icon: "🍽", label: "서빙", taps: 3 },
-  { id: "bus", icon: "🧹", label: "정리", taps: 4 },
+  { id: "order", icon: "📝", label: "주문서", key: "Q", taps: 2 },
+  { id: "serve", icon: "🍽", label: "서빙", key: "W", taps: 2 },
+  { id: "call", icon: "🖐", label: "응대", key: "E", taps: 2 },
+  { id: "bus", icon: "🧹", label: "정리", key: "R", taps: 2 },
 ];
 
 export class HallService extends ArcadeShell {
@@ -754,9 +786,9 @@ export class HallService extends ArcadeShell {
       kicker: "HALL / SERVICE RUN",
       w: 720, h: 460, duration: 28,
       legend: `
-        <span>🖐 응대</span><span>📝 주문서</span><span>🍽 서빙</span><span>🧹 정리</span>
-        <span>테이블 앞에서 <b>스페이스 연타</b> · 우리 매장 테이블 ${realTables}개 그대로</span>
-        <b>←→ 이동 · SPACE 처리</b>`,
+        <span>📝 주문서 <b>Q</b></span><span>🍽 서빙 <b>W</b></span><span>🖐 응대 <b>E</b></span><span>🧹 정리 <b>R</b></span>
+        <span>말풍선의 키를 먼저, 그다음 <b>스페이스 ×2</b> · 우리 매장 테이블 ${realTables}개 그대로</span>
+        <b>←→ 이동 · 키 + SPACE×2</b>`,
     });
     this.tables = Array.from({ length: realTables }, (_, index) => ({
       x: this.W * ((index + 1) / (realTables + 1)),
@@ -778,10 +810,24 @@ export class HallService extends ArcadeShell {
     const caller = this.sim.activeAgents.find((agent) => agent.serviceRequested && !agent.serviceResolved && !agent.arcadeTaken);
     const dirty = this.sim.tables.find((item) => item.state === "dirty" && !item.arcadeTaken);
     let kind;
-    if (caller) { kind = HALL_TASKS[0]; caller.arcadeTaken = true; table.agentId = caller.id; }
+    if (caller) { kind = HALL_TASKS[2]; caller.arcadeTaken = true; table.agentId = caller.id; }
     else if (dirty) { kind = HALL_TASKS[3]; dirty.arcadeTaken = true; table.tableId = dirty.id; }
-    else kind = HALL_TASKS[1 + Math.floor(Math.random() * 2)];
-    table.task = { kind, taps: 0, patience: 8.5, pop: 0 };
+    else kind = HALL_TASKS[Math.floor(Math.random() * 2)];
+    table.task = { kind, keyDone: false, taps: 0, patience: 8.5, pop: 0 };
+  }
+
+  finishTask(table) {
+    this.stats.handled += 1;
+    this.bumpCombo();
+    if (table.task.kind.id === "call" && table.agentId) this.sim.attendCustomer(table.agentId);
+    else if (table.task.kind.id === "bus" && table.tableId != null) this.sim.expressClean(table.tableId);
+    else this.sim.hallDelight();
+    this.burst(table.x, this.H * 0.44, "#8fd6ab", 16, 140);
+    this.addFloat(table.x, this.H * 0.4, `${table.task.kind.label} 완료!`, "#8fd6ab");
+    this.sounds?.good();
+    table.task = null;
+    table.agentId = null;
+    table.tableId = null;
   }
 
   update(dt) {
@@ -791,27 +837,40 @@ export class HallService extends ArcadeShell {
     this.nextTask -= dt;
     if (this.nextTask <= 0) {
       this.spawnTask();
-      this.nextTask = 1.0 + Math.random() * 0.9;
+      // 붐비는 시간대엔 말풍선이 쏟아진다 — 홀이 정신없어지는 이유
+      this.nextTask = (1.0 + Math.random() * 0.9) / Math.max(0.6, this.crowd.factor);
     }
 
     const table = this.tables[this.slot];
+    // 1단계: 과제 고유 키(Q/W/E/R) — 맞는 키를 먼저 눌러야 스페이스가 먹힌다
+    if (this.actionTap && table.task) {
+      const task = table.task;
+      if (!task.keyDone && this.actionTap === task.kind.key) {
+        task.keyDone = true;
+        task.pop = 0.25;
+        this.burst(table.x, this.H * 0.5, "#f0c674", 6, 80);
+        this.addFloat(table.x, this.H * 0.46, `[${task.kind.key}] ${task.kind.label} 접수!`, "#f0c674");
+        this.sounds?.click();
+      } else if (!task.keyDone) {
+        this.breakCombo();
+        task.patience -= 0.6;
+        this.addFloat(table.x, this.H * 0.5, `삑! [${task.kind.key}]를 눌러야죠`, "#e07a6a");
+        this.sounds?.bad();
+      }
+    } else if (this.actionTap && !table.task) {
+      this.addFloat(table.x, this.H * 0.5, "이 테이블은 괜찮아요", "#9c8b7c");
+    }
+    // 2단계: 스페이스 2연타로 마무리
     if (this.spaceTap && table.task) {
-      table.task.taps += 1;
-      table.task.pop = 0.22;
-      this.burst(table.x, this.H * 0.5, "#efe6d8", 5, 70);
-      this.sounds?.click();
-      if (table.task.taps >= table.task.kind.taps) {
-        this.stats.handled += 1;
-        this.bumpCombo();
-        if (table.task.kind.id === "call" && table.agentId) this.sim.attendCustomer(table.agentId);
-        else if (table.task.kind.id === "bus" && table.tableId != null) this.sim.expressClean(table.tableId);
-        else this.sim.hallDelight();
-        this.burst(table.x, this.H * 0.44, "#8fd6ab", 16, 140);
-        this.addFloat(table.x, this.H * 0.4, `${table.task.kind.label} 완료!`, "#8fd6ab");
-        this.sounds?.good();
-        table.task = null;
-        table.agentId = null;
-        table.tableId = null;
+      const task = table.task;
+      if (!task.keyDone) {
+        this.addFloat(table.x, this.H * 0.5, `먼저 [${task.kind.key}] ${task.kind.label}!`, "#9c8b7c");
+      } else {
+        task.taps += 1;
+        task.pop = 0.22;
+        this.burst(table.x, this.H * 0.5, "#efe6d8", 5, 70);
+        this.sounds?.click();
+        if (task.taps >= task.kind.taps) this.finishTask(table);
       }
     } else if (this.spaceTap && !table.task) {
       this.addFloat(table.x, this.H * 0.5, "이 테이블은 괜찮아요", "#9c8b7c");
@@ -905,44 +964,60 @@ export class HallService extends ArcadeShell {
 
       // 과제 말풍선
       if (table.task) {
-        const { kind, taps, patience, pop } = table.task;
-        const by = this.H * 0.3;
+        const { kind, keyDone, taps, patience, pop } = table.task;
+        const by = this.H * 0.26;
         const scalePop = 1 + Math.max(0, pop) * 0.5;
         ctx.save();
-        ctx.translate(table.x, by + 24);
+        ctx.translate(table.x, by + 28);
         ctx.scale(scalePop, scalePop);
-        ctx.translate(-table.x, -(by + 24));
+        ctx.translate(-table.x, -(by + 28));
         ctx.fillStyle = "#f4ecdc";
         ctx.strokeStyle = "rgba(20,14,8,.5)";
         ctx.lineWidth = 2;
-        roundRect(ctx, table.x - 46, by, 92, 48, 8);
+        roundRect(ctx, table.x - 50, by, 100, 58, 8);
         ctx.fill();
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(table.x - 8, by + 48);
-        ctx.lineTo(table.x, by + 60);
-        ctx.lineTo(table.x + 8, by + 48);
+        ctx.moveTo(table.x - 8, by + 58);
+        ctx.lineTo(table.x, by + 70);
+        ctx.lineTo(table.x + 8, by + 58);
         ctx.closePath();
         ctx.fill();
-        ctx.font = "22px serif";
+        ctx.font = "17px serif";
         ctx.textAlign = "center";
-        ctx.fillText(kind.icon, table.x - 16, by + 32);
+        ctx.fillText(kind.icon, table.x - 30, by + 21);
         ctx.fillStyle = "#3c3226";
         ctx.font = "700 12px 'NeoDunggeunmo', sans-serif";
-        ctx.fillText(kind.label, table.x + 16, by + 24);
-        // 스페이스 연타 도트
+        ctx.fillText(kind.label, table.x + 8, by + 19);
+        // 1단계 — 과제 키 캡, 2단계 — 스페이스 두 칸
+        ctx.fillStyle = keyDone ? "#5fa57c" : "#d9a441";
+        roundRect(ctx, table.x - 42, by + 28, 24, 22, 4);
+        ctx.fill();
+        if (!keyDone) {
+          ctx.strokeStyle = "#8a5f1e";
+          ctx.lineWidth = 2;
+          roundRect(ctx, table.x - 42, by + 28, 24, 22, 4);
+          ctx.stroke();
+        }
+        ctx.fillStyle = keyDone ? "#eafff2" : "#2c2418";
+        ctx.font = "800 13px 'NeoDunggeunmo', monospace";
+        ctx.fillText(kind.key, table.x - 30, by + 44);
         for (let k = 0; k < kind.taps; k += 1) {
-          ctx.fillStyle = k < taps ? "#5fa57c" : "#c9beac";
-          ctx.beginPath();
-          ctx.arc(table.x - 12 + k * 12, by + 38, 4, 0, Math.PI * 2);
+          const done = keyDone && k < taps;
+          const current = keyDone && k === taps;
+          ctx.fillStyle = done ? "#5fa57c" : current ? "#d9a441" : "#c9beac";
+          roundRect(ctx, table.x - 8 + k * 26, by + 28, 22, 22, 4);
           ctx.fill();
+          ctx.fillStyle = done ? "#eafff2" : "#2c2418";
+          ctx.font = "800 10px 'NeoDunggeunmo', monospace";
+          ctx.fillText("␣", table.x + 3 + k * 26, by + 43);
         }
         ctx.restore();
         // 인내 게이지
         ctx.fillStyle = "#171310";
-        ctx.fillRect(table.x - 46, by + 64, 92, 6);
+        ctx.fillRect(table.x - 46, by + 76, 92, 6);
         ctx.fillStyle = patience < 3 ? "#c25a4a" : "#5fa57c";
-        ctx.fillRect(table.x - 46, by + 64, 92 * Math.max(0, patience / 8.5), 6);
+        ctx.fillRect(table.x - 46, by + 76, 92 * Math.max(0, patience / 8.5), 6);
       }
     }
     // 사장 — 쟁반을 든

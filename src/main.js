@@ -36,7 +36,7 @@ import {
   getById,
 } from "./data.js";
 import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost } from "./sim.js";
-import { GameScene, HeroScene, InteriorScene } from "./scene.js";
+import { GameScene, HeroScene } from "./scene.js";
 import { mountIllustration } from "./visuals.js";
 import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js";
 import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js";
@@ -92,7 +92,6 @@ const state = {
 
 let heroScene = null;
 let gameScene = null;
-let interiorScene = null;
 let illustrationDisposers = [];
 let operationRaf = null;
 let lastFrame = 0;
@@ -167,7 +166,6 @@ function stopAnimatedViews() {
   if (operationRaf) cancelAnimationFrame(operationRaf);
   operationRaf = null;
   gameScene = null;
-  interiorScene = null;
   lastFrame = 0;
 }
 
@@ -371,7 +369,10 @@ function setupCosts() {
   const beanStock = getById(BEAN_TIERS, state.beanTierId)?.initialStock ?? 0;
   const researchSpend = (state.researchBought?.length ?? 0) * RESEARCH_COST;
   const checklist = district ? GAME_CONFIG.openingChecklistCost : 0;
-  const total = lease + formatCost + equipmentCost + beanStock + researchSpend + checklist;
+  // 베이커리라면 디저트 조달 방식이 집기 비용을 정한다 — 직접 굽기는 오븐·발효기, 납품은 쇼케이스
+  const supplyMode = state.formatId === "bakery_cafe" ? getById(SUPPLY_MODES, state.supplyModeId) : null;
+  const supplyGear = supplyMode?.gearCost ?? 0;
+  const total = lease + formatCost + equipmentCost + beanStock + researchSpend + checklist + supplyGear;
   const baseCapital = getById(CAPITAL_OPTIONS, state.capitalId)?.amount ?? GAME_CONFIG.startingCash;
   const loan = (state.loanUnits ?? 0) * LOAN_UNIT;
   const capital = baseCapital + loan;
@@ -382,6 +383,7 @@ function setupCosts() {
       lease ? { label: `${district.shortName} ${format.pyeong}평 보증금·권리금·인테리어`, value: lease } : null,
       format ? { label: `${format.name} 시설`, value: formatCost } : null,
       equipment ? { label: equipment.name, value: equipmentCost } : null,
+      supplyGear ? { label: supplyMode.gearLabel, value: supplyGear } : null,
       beanStock ? { label: "원두·부자재 선매입", value: beanStock } : null,
       researchSpend ? { label: `상권 분석 ${state.researchBought.length}부`, value: researchSpend } : null,
       checklist ? { label: "개업 행정·보험", value: checklist } : null,
@@ -685,17 +687,25 @@ function renderWizard() {
       if (unaffordable) lockedChoices = true;
       return choiceCard({
         id: tier.id, attr: "equipment", name: `${tier.icon} ${tier.name}`, sub: tier.description,
-        art: { kind: "bean", id: tier.id === "used" ? "value" : tier.id === "standard" ? "standard" : "specialty" },
+        art: { kind: "equipment", id: tier.id },
         meta: unaffordable ? [`지금 결제 ${formatMoney(tier.cost, true)}`, "🔒 자본 부족 — 대출 필요"] : [`지금 결제 ${formatMoney(tier.cost, true)}`, tier.cookSpeed !== 1 ? `제조 ${tier.cookSpeed > 1 ? "+" : ""}${Math.round((tier.cookSpeed - 1) * 100)}%` : "제조 기준", tier.quality ? `맛 ${tier.quality > 0 ? "+" : ""}${Math.round(tier.quality * 100)}` : "맛 ±0"],
         selected: state.equipmentId === tier.id,
         disabled: unaffordable,
       });
     }).join("")}</div>`;
   } else if (step.id === "supply") {
+    const baseSeats = getById(FORMATS, "bakery_cafe").seats;
     body = `<div class="choice-grid cols-3">${SUPPLY_MODES.map((mode) => choiceCard({
       id: mode.id, attr: "supply", name: `${mode.icon} ${mode.name}`, sub: mode.description,
       art: { kind: "format", id: mode.id === "bake" ? "bakery_cafe" : "specialty_cafe" },
-      meta: [mode.needsBaker ? "베이커 고용" : "베이커 없음", `재료비 ${mode.costMultiplier < 1 ? "−28%" : "기준"}`, mode.quality > 0 ? "맛 +6" : "맛 −5"],
+      meta: [
+        `${mode.gearLabel} +${formatMoney(mode.gearCost, true)}`,
+        mode.seatsDelta >= 0 && mode.id === "buy"
+          ? `좌석 ${baseSeats + mode.seatsDelta}석 — 주방이 작아 +${mode.seatsDelta}석`
+          : `좌석 ${baseSeats}석 — 주방 확장이 좌석을 먹습니다`,
+        mode.needsBaker ? "베이커 고용" : "베이커 없음",
+        mode.quality > 0 ? "맛 +6" : "맛 −5 · 재료비 −28%",
+      ],
       selected: state.supplyModeId === mode.id,
     })).join("")}</div>`;
   } else if (step.id === "business") {
@@ -885,7 +895,12 @@ function renderWizard() {
 }
 
 function startCampaign() {
-  const { district, format, remaining } = setupCosts();
+  const { district, format: baseFormat, remaining } = setupCosts();
+  // 디저트 조달이 좌석을 정한다 — 납품이면 주방이 작아 좌석이 늘어난다
+  const supplyPick = baseFormat?.bakes ? getById(SUPPLY_MODES, state.supplyModeId ?? "bake") : null;
+  const format = supplyPick?.seatsDelta
+    ? { ...baseFormat, seats: baseFormat.seats + supplyPick.seatsDelta }
+    : baseFormat;
   const menus = state.menuIds.map((id) => getById(MENUS, id));
   // 위저드에서 이미 간판을 달았다. 비어 있을 때만 시그니처 기반 추천으로 채운다.
   if (!(state.restaurantName ?? "").trim()) state.restaurantName = restaurantNameFor(menus[0]);
@@ -1125,21 +1140,48 @@ function renderBrief() {
   });
 }
 
-// 사장이 자리에 들어서는 순간 화면 전체가 그 자리의 게임으로 바뀐다.
-// 튜토리얼 중·돌발 상황 중에는 열지 않는다.
-function launchArcade(stationId) {
+// 지금 얼마나 붐비는가 — 페이즈(피크)와 달(성수기)이 미니게임의 밀도를 정한다.
+function crowdInfoFor(sim) {
+  const phase = sim.currentPhase();
+  const season = sim.demandFactor ?? 1;
+  const factor = (phase.busy ? 1.6 : 1) * (season >= 1.12 ? 1.3 : season >= 0.95 ? 1 : 0.85);
+  const info = monthInfo(state.campaign?.month ?? 1);
+  let label = null;
+  if (phase.busy && season >= 1.12) label = `🔥 ${phase.korean} × ${info.name} 성수기 — 거리가 터져나갑니다`;
+  else if (phase.busy) label = `🔥 ${phase.korean} — 사람이 몰리는 시간대`;
+  else if (season >= 1.12) label = `🌸 ${info.name} 성수기 — 평소보다 붐빕니다`;
+  else if (season <= 0.88) label = `🍂 ${info.name} 비수기 — 거리가 한산합니다`;
+  return { factor, label };
+}
+
+// 미니게임은 클릭 또는 1·2·3 키로만 열린다 — 자동 배치는 절대 열지 않는다.
+// 왼쪽 미니게임 자리에 열리고, 그동안 카페 씬과 크기를 맞바꾼다.
+function launchArcade(stationId, { practice = false } = {}) {
   const sim = state.simulation;
   if (!sim || state.arcadeOpen || sim.finished) return;
-  if (document.querySelector(".tutorial-card") || sim.activeDilemma) return;
+  if (!practice && (document.querySelector(".tutorial-card") || sim.activeDilemma)) return;
   const GameClass = ARCADE_BY_STATION[stationId];
   if (!GameClass) return;
   state.arcadeOpen = true;
-  sim.setSpeed(1);
+  if (!practice) sim.setSpeed(1);
+  const dock = document.querySelector("#arcade-dock");
+  const home = document.querySelector("#arcade-home");
+  if (home) home.hidden = true;
+  document.querySelector(".ops-grid")?.classList.add("arcade-live");
   const game = new GameClass({
-    sim, sounds,
+    sim, sounds, practice,
+    crowd: practice ? { factor: 1, label: "연습 모드 — 결과는 반영되지 않습니다" } : crowdInfoFor(sim),
+    mount: dock ?? undefined,
     onEnd: (stats) => {
       state.arcadeOpen = false;
       state.activeArcade = null;
+      document.querySelector(".ops-grid")?.classList.remove("arcade-live");
+      const homeAfter = document.querySelector("#arcade-home");
+      if (homeAfter) homeAfter.hidden = false;
+      if (practice) {
+        state.tutorial?.advance();
+        return;
+      }
       if (stationId === "door") toast(`전단지 영업 끝 — ${stats.score ?? 0}점, 손님 ${stats.converted ?? 0}명 확보`);
       else if (stationId === "bar") toast(`키친 러시 끝 — ${stats.made ?? 0}잔을 직접 만들었습니다`);
       else toast(`홀 서빙 끝 — ${stats.handled ?? 0}건 처리`);
@@ -1158,10 +1200,27 @@ function renderOperations() {
   ownerWasOnDuty = snapshot.onDuty;
   screen.innerHTML = `
     <section class="operations-screen enter-up"><div class="ops-grid">
-      <div class="interior-column">
-        <div class="interior-head"><span class="meta-label">INSIDE CAM</span><strong>바 내부</strong></div>
-        <div class="interior-panel"><canvas id="interior-canvas" aria-label="에스프레소 머신, 쇼케이스, 싱크대가 보이는 매장 내부 화면. 클릭해서 직접 개입할 수 있습니다."></canvas></div>
-        <p class="interior-hint" id="interior-hint">키친에 있을 때만 머신 청소와 쇼케이스 보충이 됩니다</p>
+      <div class="interior-column" id="arcade-column">
+        <div class="interior-head"><span class="meta-label">MINIGAME</span><strong>사장의 자리 — 여기서 뜁니다</strong></div>
+        <div class="interior-panel arcade-dock" id="arcade-dock">
+          <div class="arcade-home" id="arcade-home">
+            <p class="arcade-home-lede">미니게임은 자리를 <b>클릭</b>하거나 <b>1 · 2 · 3</b> 키를 눌러야만 시작됩니다.<br />자동으로는 절대 열리지 않아요.</p>
+            <button class="arcade-home-card" data-station="bar" type="button">
+              <span class="ah-key">1</span><span class="ah-icon" aria-hidden="true">☕</span>
+              <span class="ah-body"><b>${snapshot.stationNames?.bar ?? "키친"} — 키친 러시</b><span>←→ 레인 이동 · 주문서의 <i>Q W E R</i>을 순서대로</span></span>
+            </button>
+            <button class="arcade-home-card" data-station="hall" type="button">
+              <span class="ah-key">2</span><span class="ah-icon" aria-hidden="true">🍽</span>
+              <span class="ah-body"><b>${snapshot.stationNames?.hall ?? "홀"} — 홀 서빙</b><span>←→ 이동 · 말풍선 키 <i>Q/W/E/R</i> + <i>SPACE×2</i></span></span>
+            </button>
+            <button class="arcade-home-card" data-station="door" type="button">
+              <span class="ah-key">3</span><span class="ah-icon" aria-hidden="true">📄</span>
+              <span class="ah-body"><b>${snapshot.stationNames?.door ?? "입구"} — 전단지 돌리기</b><span>←→ 이동만 · 행인은 잡고, 진상은 피하고</span></span>
+            </button>
+            <p class="arcade-home-note">성과는 그대로 오늘 매출·만족도에 반영됩니다. 피크 시간대·성수기 달엔 훨씬 정신없어요.</p>
+          </div>
+        </div>
+        <p class="interior-hint">미니게임이 시작되면 이 자리가 커지고, 카페는 옆에서 계속 돌아갑니다 — 시간도 흐릅니다</p>
       </div>
       <div class="scene-panel">
         <canvas id="game-canvas" aria-label="${escapeHtml(sim.district.name)}의 낮과 밤, 매장 내부와 움직이는 고객을 보여주는 실시간 영업 장면"></canvas>
@@ -1194,9 +1253,6 @@ function renderOperations() {
                 <span class="station-name">자동</span>
                 <span class="station-key">0</span>
               </button>
-              <button class="owner-button" id="flyer-run" type="button" hidden><span class="owner-text">📄 전단지 돌리기</span></button>
-              <button class="owner-button" id="supply-approve" type="button" hidden><span class="owner-text" id="supply-approve-text">발주 승인</span></button>
-              <button class="owner-button" id="day-labor" type="button"><span class="owner-text" id="day-labor-text">일일알바</span></button>
             </div>
             <div class="live-kpis"><div class="live-kpi"><span class="metric-label">CASH</span><strong id="hud-cash">${formatMoney(snapshot.cash, true)}</strong></div><div class="live-kpi"><span class="metric-label">SALES</span><strong id="hud-sales">${formatMoney(snapshot.metrics.revenue, true)}</strong></div></div>
           </div>
@@ -1227,15 +1283,25 @@ function renderOperations() {
     sounds.click();
     document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === speed));
   }));
-  document.querySelector("#flyer-run").addEventListener("click", () => {
-    if (!sim.atStation("door")) { toast("입구에 서 있어야 전단지를 돌릴 수 있습니다."); sounds.bad(); return; }
-    launchArcade("door");
-  });
+  // 자동 = "내 선택의 성적표를 빨리 본다": 출근시키고, 4배속으로 하루를 자동 진행해
+  // 마감 리포트로 직행한다. 미니게임은 자동에서는 절대 열리지 않는다.
   document.querySelector("#station-auto").addEventListener("click", () => {
     const sim2 = state.simulation;
     const result = sim2.setOwnerAuto(!sim2.autoOwner);
     sounds.click();
-    toast(result.auto ? "자동 배치 — 사장이 알아서 움직입니다." : "수동 배치 — 자리를 직접 정하세요.");
+    if (result.auto) {
+      state.pendingArcade = null;
+      if (!sim2.ownerWorking) sim2.toggleOwnerWork();
+      sim2.setSpeed(4);
+      state.lastSpeed = 4;
+      document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 4));
+      toast("자동 진행 — 4배속으로 하루를 돌려 마감 리포트를 보러 갑니다. 미니게임은 열리지 않습니다.");
+    } else {
+      sim2.setSpeed(1);
+      state.lastSpeed = 1;
+      document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 1));
+      toast("수동 배치 — 자리를 직접 정하세요. 미니게임은 클릭·1/2/3으로 시작합니다.");
+    }
   });
   // 스페이스 바로 출근/쉬기 — 손이 제일 빠른 키에 제일 자주 쓰는 동작을 둔다
   const spaceHandler = (event) => {
@@ -1259,9 +1325,19 @@ function renderOperations() {
     }
   });
   screen.querySelectorAll("[data-station]").forEach((button) => button.addEventListener("click", () => {
-    const result = sim.moveOwner(button.dataset.station);
+    const stationId = button.dataset.station;
+    // 튜토리얼 연습 스텝 — 이동 없이 바로 그 자리의 연습판을 연다
+    const tutStep = state.tutorial?.step;
+    if (tutStep?.practice) {
+      if (tutStep.practice === stationId && !state.arcadeOpen) {
+        state.tutorial.enterWaiting();
+        launchArcade(stationId, { practice: true });
+      }
+      return;
+    }
+    const result = sim.moveOwner(stationId);
     if (result.ok) {
-      state.pendingArcade = button.dataset.station;
+      state.pendingArcade = stationId;
       sounds.good();
       gameScene?.addFloater(gameScene.ownerSpot?.x ?? 600, (gameScene.ownerSpot?.y ?? 600) - 100, result.label, "good");
     } else {
@@ -1269,21 +1345,6 @@ function renderOperations() {
       toast(result.reason);
     }
   }));
-  document.querySelector("#supply-approve").addEventListener("click", () => {
-    const result = sim.approveSupplyOrder();
-    if (result.ok) { sounds.good(); toast("매니저에게 발주를 넘겼습니다. 40분 뒤 도착합니다."); }
-    else { sounds.bad(); toast(result.reason); }
-  });
-  document.querySelector("#day-labor").addEventListener("click", () => {
-    const result = sim.callDayLabor();
-    if (result.ok) {
-      sounds.good();
-      if (gameScene?.ownerSpot) gameScene.addFloater(gameScene.ownerSpot.x, gameScene.ownerSpot.y - 84, "일일알바 호출!", "good");
-    } else {
-      sounds.bad();
-      toast(result.reason);
-    }
-  });
   document.querySelector("#open-notebook").addEventListener("click", () => {
     sounds.click();
     openNotebook();
@@ -1350,22 +1411,6 @@ function renderOperations() {
     showDilemma(dilemma);
   });
   gameScene = new GameScene(document.querySelector("#game-canvas"), { district: sim.district, format: sim.format, menus: sim.menus, restaurantName: state.restaurantName });
-  interiorScene = new InteriorScene(document.querySelector("#interior-canvas"), { format: sim.format, menus: sim.menus, restaurantName: state.restaurantName });
-  const interiorCanvas = document.querySelector("#interior-canvas");
-  interiorCanvas.addEventListener("click", (event) => {
-    const rect = interiorCanvas.getBoundingClientRect();
-    const spot = interiorScene?.pick(event.clientX - rect.left, event.clientY - rect.top);
-    if (!spot) return;
-    if (spot === "machine") {
-      const result = sim.cleanMachine();
-      interiorScene.addFloater(result.ok ? "머신 청소!" : result.reason, result.ok ? "good" : "bad", 140, 200);
-      if (result.ok) sounds.good(); else sounds.bad();
-    } else if (spot === "case") {
-      const result = sim.restockCase();
-      interiorScene.addFloater(result.ok ? result.label : result.reason, result.ok ? "good" : "bad", 320, 190);
-      if (result.ok) sounds.good(); else sounds.bad();
-    }
-  });
   beginOperationLoop();
   if (sim.activeDilemma) showDilemma(sim.activeDilemma);
 
@@ -1378,13 +1423,15 @@ function renderOperations() {
       // 안내 문구가 실제 버튼에 적힌 자리 이름을 그대로 쓰게 한다.
       stationNames: sim.snapshot().stationNames,
       onFinish: ({ skipped }) => {
+        state.tutorial = null;
         platform.logEvent("tutorial_finished", { skipped });
-        toast(skipped ? "튜토리얼을 건너뛰었습니다. 언제든 HOW TO에서 다시 볼 수 있어요." : "이제 영업을 시작합니다. 근무시간 안에서만 개입할 수 있다는 걸 기억하세요.");
+        toast(skipped ? "튜토리얼을 건너뛰었습니다. 언제든 HOW TO에서 다시 볼 수 있어요." : "이제 진짜 영업입니다. 직접 뛰든, 자동으로 결과를 보든 — 선택은 사장 몫입니다.");
         sim.setSpeed(1);
         state.lastSpeed = 1;
         document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 1));
       },
     });
+    state.tutorial = tutorial;
     tutorial.start();
   }
 }
@@ -1449,8 +1496,8 @@ function showDilemma(dilemma) {
   }));
 }
 
-function openNotebook() {
-  const sim = state.simulation;
+// 메뉴 × 손님 적합도 표 — 장사 노트 다이얼로그와 마감 리포트가 같은 표를 쓴다
+function notebookTableMarkup(sim) {
   const snapshot = sim.snapshot();
   const rows = sim.menus.map((menu) => {
     const cells = CUSTOMERS.map((customer) => {
@@ -1465,6 +1512,30 @@ function openNotebook() {
     }).join("");
     return `<tr><th>${menu.name}</th>${cells}</tr>`;
   }).join("");
+  return `<div class="notebook-table-wrap"><table class="notebook-table">
+      <thead><tr><th></th>${CUSTOMERS.map((customer) => `<th>${customer.short}</th>`).join("")}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+// 메뉴 하나의 노트 요약 — "◎2 △1" 식으로, 다음 판 메뉴 개편의 근거가 된다
+function menuFitBadge(sim, menuId) {
+  const snapshot = sim.snapshot();
+  let great = 0;
+  let bad = 0;
+  for (const customer of CUSTOMERS) {
+    const stat = snapshot.fitStats[`${menuId}:${customer.id}`];
+    if (!stat || stat.count < GAME_CONFIG.fitRevealCount) continue;
+    const symbol = fitGrade(stat.total / stat.count).symbol;
+    if (symbol === "◎") great += 1;
+    else if (symbol === "△") bad += 1;
+  }
+  if (!great && !bad) return "";
+  return `<span class="fit-badge">${great ? `<b class="is-great">◎${great}</b>` : ""}${bad ? `<b class="is-bad">△${bad}</b>` : ""}</span>`;
+}
+
+function openNotebook() {
+  const sim = state.simulation;
   const lessons = state.reports.map((report) => `<li><b>${report.day >= 6 ? "주말" : "평일"}</b> ${report.verdict}</li>`).join("");
   const dialog = document.createElement("dialog");
   dialog.className = "notebook-dialog";
@@ -1473,10 +1544,7 @@ function openNotebook() {
     <span class="meta-label">사장의 장사 노트</span>
     <h2>손님이 가르쳐 준 것</h2>
     <p class="notebook-lede">같은 메뉴도 손님에 따라 평가가 다릅니다. 3명 이상에게 제공하면 적합도가 기록됩니다.</p>
-    <div class="notebook-table-wrap"><table class="notebook-table">
-      <thead><tr><th></th>${CUSTOMERS.map((customer) => `<th>${customer.short}</th>`).join("")}</tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>
+    ${notebookTableMarkup(sim)}
     ${lessons ? `<div class="notebook-lessons"><span class="meta-label">지난 마감의 교훈</span><ul>${lessons}</ul></div>` : ""}`;
   document.body.append(dialog);
   dialog.querySelector(".modal-close").addEventListener("click", () => dialog.close());
@@ -1517,7 +1585,6 @@ function beginOperationLoop() {
     lastFrame = time;
     const snapshot = sim.update(delta);
     gameScene?.draw(snapshot, delta);
-    interiorScene?.draw(snapshot, delta);
     consumeVisualEvents(sim);
     updateOperationsHud(snapshot);
     if (state.view === "operations") operationRaf = requestAnimationFrame(frame);
@@ -1537,16 +1604,10 @@ function consumeVisualEvents(sim) {
       shown += 1;
       const spot = gameScene?.registerSpot;
       if (spot) gameScene.addFloater(spot.x, spot.y, `+${formatMoney(event.amount)}`, "good");
-      interiorScene?.coinBurst();
-    } else if (event.type === "regular") {
-      interiorScene?.addFloater("단골 +1", "good", 369, 280);
     } else if (event.type === "autoMove") {
       // 자동 배치가 사장을 움직일 때마다 이유가 화면에 뜬다
       const spot = gameScene?.ownerSpot;
       gameScene?.addFloater(spot?.x ?? 600, (spot?.y ?? 600) - 110, `🤖 ${event.reason}`, "neutral");
-      interiorScene?.coinBurst();
-    } else if (event.type === "restock") {
-      interiorScene?.addFloater("쇼케이스 보충 완료!", "good", 320, 190);
     }
   }
   const now = performance.now();
@@ -1591,7 +1652,8 @@ function updateOperationsHud(snapshot) {
     // 시간이 0이어도 초과 근무로 다시 들어갈 수 있으니 버튼은 살아 있다
     workToggle.disabled = snapshot.finished || (snapshot.ownerStress ?? 0) >= 100 && !snapshot.ownerWorking;
   }
-  // 예약된 아케이드 — 자리에 실제로 도착하는 순간 화면이 바뀐다
+  // 예약된 아케이드 — 자리에 실제로 도착하는 순간 화면이 바뀐다 (자동 모드에서는 열지 않는다)
+  if (snapshot.ownerAuto) state.pendingArcade = null;
   if (state.pendingArcade && snapshot.stationActive === state.pendingArcade && !state.arcadeOpen) {
     const stationId = state.pendingArcade;
     state.pendingArcade = null;
@@ -1602,12 +1664,8 @@ function updateOperationsHud(snapshot) {
     const autoButton = byId("station-auto");
     if (autoButton) {
       autoButton.classList.toggle("is-active", !!snapshot.ownerAuto);
-      autoButton.disabled = !snapshot.onDuty || snapshot.finished;
-    }
-    const flyerButton = byId("flyer-run");
-    if (flyerButton) {
-      flyerButton.hidden = snapshot.stationActive !== "door" || snapshot.finished;
-      flyerButton.disabled = state.arcadeOpen;
+      // 자동은 출근 전에도 켤 수 있다 — 켜는 순간 사장을 출근시키고 4배속으로 하루를 돌린다
+      autoButton.disabled = snapshot.finished;
     }
     dock.querySelectorAll("[data-station]").forEach((button) => {
       const id = button.dataset.station;
@@ -1631,24 +1689,6 @@ function updateOperationsHud(snapshot) {
     ownerWasOnDuty = true;
   }
 
-  // 쇼케이스가 비면 사장이 쉬는 중이어도 전화 한 통으로 발주할 수 있다
-  const approveButton = byId("supply-approve");
-  if (approveButton) {
-    const caseMenus = state.simulation.menus.filter((menu) => menu.caseItem);
-    const soldOut = caseMenus.some((menu) => (snapshot.caseStock?.[menu.id] ?? 0) <= 0);
-    approveButton.hidden = !caseMenus.length || (!soldOut && !snapshot.pendingRestock);
-    approveButton.disabled = !!snapshot.pendingRestock || snapshot.finished;
-    byId("supply-approve-text").textContent = snapshot.pendingRestock ? "발주 처리 중…" : "발주 승인";
-    approveButton.classList.toggle("is-urgent", soldOut && !snapshot.pendingRestock);
-  }
-
-  const dayLaborButton = byId("day-labor");
-  if (dayLaborButton) {
-    dayLaborButton.disabled = snapshot.dayLabor?.called || snapshot.finished;
-    byId("day-labor-text").textContent = snapshot.dayLabor?.active
-      ? "알바 근무 중"
-      : snapshot.dayLabor?.called ? "알바 오는 중…" : "일일알바 ₩50,000";
-  }
   const flyerCount = byId("flyer-count");
   if (flyerCount) flyerCount.textContent = snapshot.flyersLeft ?? 0;
   const hallMeter = byId("meter-hall");
@@ -1798,6 +1838,12 @@ function renderReport() {
         return `<div class="owner-report"><span class="meta-label">사장의 손</span><p>${parts.join(" · ")}</p></div>`;
       })()}
       ${report.influencerNote ? `<div class="influencer-note ${report.influencerNote.tone}"><span class="meta-label">AFTER HOURS</span><p>${report.influencerNote.text}</p></div>` : ""}
+      <section class="report-panel notebook-panel">
+        <span class="meta-label">사장의 장사 노트 — 오늘까지의 기록</span>
+        <h2>손님이 가르쳐 준 것, 다음 판의 무기</h2>
+        <p class="notebook-lede">영업 중엔 볼 시간이 없었죠. 여기서 읽으세요 — ◎ 찰떡 조합은 밀고, △ 불일치 메뉴는 다음 달 '메뉴 개편'에서 빼는 게 정석입니다. 이 표는 월 계획 화면의 메뉴 카드에도 그대로 붙어 있습니다.</p>
+        ${notebookTableMarkup(state.simulation)}
+      </section>
       <div class="review-strip">${reviews.map((review) => `<article class="review-card ${review.tone}"><span class="meta-label">${review.stars ? `${"★".repeat(Math.floor(review.stars))} ${review.stars.toFixed(1)}` : "NO REVIEW"} · ${review.customer}</span><p>“${escapeHtml(review.text)}”</p><span class="metric-label">${review.reason ? (review.tone === "good" ? PRAISE_EXPLANATIONS[review.reason] : LOSS_EXPLANATIONS[review.reason]) ?? "고객 경험" : "행동 데이터 우선"}</span></article>`).join("")}</div>
       <div class="report-actions">${!isWeekendReport && state.campaign.month === 1
         ? `<button class="cta" id="go-next" type="button"><span>주말 영업 준비</span><span aria-hidden="true">→</span></button>`
@@ -2186,7 +2232,7 @@ function renderImprovements() {
             }).join("")}
           </div>
 
-          <div class="setup-section-head" style="margin-top:22px"><h2>메뉴 개편</h2><span class="meta-label">${sim.menus.length} / 5 · 다음 달부터 적용</span></div>
+          <div class="setup-section-head" style="margin-top:22px"><h2>메뉴 개편</h2><span class="meta-label">${sim.menus.length} / 5 · 다음 달부터 적용 · ◎/△ = 장사 노트 기록</span></div>
           ${menuNotice ? `<p class="staffing-none">${menuNotice}</p>` : ""}
           <div class="menu-edit-grid">
             ${MENUS.map((menu) => {
@@ -2194,7 +2240,7 @@ function renderImprovements() {
               const gate = menuGate(menu);
               return `<button class="menu-chip ${selected ? "is-selected" : ""}" data-edit-menu="${menu.id}" type="button" ${!selected && gate ? "disabled" : ""} title="${gate ?? ""}">
                 <span class="menu-chip-icon">${menu.icon}</span>
-                <b>${menu.name}</b>
+                <b>${menu.name}${menuFitBadge(sim, menu.id)}</b>
                 <span class="menu-chip-meta">${gate && !selected ? gate : `${formatMoney(menu.price)}${menu.bakeryOnly && !sim.format.bakes ? " · 납품" : ""}`}</span>
               </button>`;
             }).join("")}
@@ -2564,6 +2610,15 @@ window.addEventListener("keydown", (event) => {
   const station = OWNER_STATIONS.find((item) => item.key === event.key);
   if (station && !state.simulation.activeDilemma && !state.arcadeOpen) {
     event.preventDefault();
+    // 튜토리얼 연습 스텝 — 키로도 연습판이 열린다
+    const tutStep = state.tutorial?.step;
+    if (tutStep?.practice) {
+      if (tutStep.practice === station.id) {
+        state.tutorial.enterWaiting();
+        launchArcade(station.id, { practice: true });
+      }
+      return;
+    }
     const result = state.simulation.moveOwner(station.id);
     if (result.ok) { state.pendingArcade = station.id; sounds.good(); } else toast(result.reason);
     return;
@@ -2594,7 +2649,7 @@ render();
   };
   (async () => {
     try {
-      localStorage.setItem("ois-cafe/tutorial-done-v2", "1");
+      localStorage.setItem("ois-cafe/tutorial-done-v5", "1");
     } catch { /* 저장 불가 환경에서도 진행 */ }
     document.querySelector("#start-game")?.click(); await wait(80);
     pick("[data-district]", "성수"); await wait(60);
@@ -2639,7 +2694,6 @@ window.__oisDebug = {
     const snapshot = sim.update(effectiveSeconds / Math.max(1, sim.speed));
     if (state.view === "operations") {
       gameScene?.draw(snapshot, 0.016);
-      interiorScene?.draw(snapshot, 0.016);
       consumeVisualEvents(sim);
       updateOperationsHud(snapshot);
     }
@@ -2649,7 +2703,6 @@ window.__oisDebug = {
     const sim = state.simulation;
     if (!sim || state.view !== "operations") return;
     gameScene?.draw(sim.snapshot(), deltaSeconds);
-    interiorScene?.draw(sim.snapshot(), deltaSeconds);
     updateOperationsHud(sim.snapshot());
   },
 };

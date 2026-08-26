@@ -352,9 +352,9 @@ export class RestaurantSimulation {
     this.lastRepeatIntent = 0;
     this.chargedDay = null;
     this.chargedAmount = 0;
-    // 자동 배치가 기본 — 사장이 병목을 보고 알아서 움직인다.
-    // 자리를 직접 찍는 순간 수동으로 바뀐다.
-    this.autoOwner = true;
+    // 수동이 기본 — 미니게임을 직접 뛰는 것이 이 게임의 본체다.
+    // 자동(🤖)은 "내 선택의 결과를 빨리 보고 싶을 때" 켜는 모드로, 켜면 4배속 리포트 직행.
+    this.autoOwner = false;
     this.autoNextDecision = 0;
   }
 
@@ -1768,7 +1768,7 @@ export class RestaurantSimulation {
     if (agent.menu.caseItem) {
       this.caseStock[agent.menu.id] = Math.max(0, (this.caseStock[agent.menu.id] ?? 0) - 1);
       if (this.caseStock[agent.menu.id] === 0) {
-        this.emit(`${agent.menu.name} 품절! 쇼케이스를 클릭해 ${this.format.bakes ? "추가로 구울" : "긴급 납품받을"} 수 있습니다.`, "bad");
+        this.emit(`${agent.menu.name} 품절! 매니저가 눈치채면 ${this.format.bakes ? "추가로 굽습니다" : "긴급 납품을 넣습니다"} — 사장보다 한참 느립니다.`, "bad");
       }
     }
     if (agent.menu.bean) this.machine.wear = clamp(this.machine.wear + 0.02, 0, 1);
@@ -1795,7 +1795,7 @@ export class RestaurantSimulation {
         agent.attachedMenu = caseMenu;
         this.pushVisual({ type: "sale", amount: attachPrice, menuId: caseMenu.id });
         if (this.caseStock[caseMenu.id] === 0) {
-          this.emit(`${caseMenu.name} 품절! 쇼케이스를 클릭해 ${this.format.bakes ? "추가로 구울" : "긴급 납품받을"} 수 있습니다.`, "bad");
+          this.emit(`${caseMenu.name} 품절! 매니저가 눈치채면 ${this.format.bakes ? "추가로 굽습니다" : "긴급 납품을 넣습니다"} — 사장보다 한참 느립니다.`, "bad");
         }
       }
     }
