@@ -8,9 +8,9 @@
 const STEPS = [
   {
     id: "mode",
-    target: "#station-dock",
+    target: "#arcade-column",
     title: "먼저 정하세요 — 직접 뛸까, 결과만 볼까",
-    body: "이 게임은 두 가지로 즐길 수 있습니다. ① 직접 뛰기: {bar}·{hall}·{door} 미니게임으로 오늘의 수익률을 직접 끌어올립니다 — 물론 못하면 나빠질 수도 있어요. ② 자동(🤖): 내가 고른 상권·평수·집기·메뉴의 결과가 궁금할 때 — 누르는 순간 4배속으로 하루가 자동 진행되고, 마감 리포트로 바로 갑니다. 지금은 직접 뛰는 법부터 배워봅시다.",
+    body: "이 게임은 두 가지로 즐길 수 있습니다. ① 직접 뛰기: 왼쪽의 {bar}·{hall}·{door} 카드로 미니게임을 열어 오늘의 수익률을 직접 끌어올립니다 — 물론 못하면 나빠질 수도 있어요. ② 자동(🤖): 내가 고른 상권·평수·집기·메뉴의 결과가 궁금할 때 — 누르는 순간 4배속으로 하루가 자동 진행되고, 마감 리포트로 바로 갑니다. 지금은 직접 뛰는 법부터 배워봅시다.",
     action: "직접 뛰어보겠습니다",
     passive: true,
   },
@@ -32,29 +32,29 @@ const STEPS = [
   },
   {
     id: "bar",
-    target: '.station-group [data-station="bar"]',
+    target: '.arcade-home-card[data-station="bar"]',
     title: "{bar} — 만드는 자리 (직접 해봅시다)",
-    body: "미니게임은 자동으로 열리지 않습니다 — {bar} 버튼을 클릭하거나 키보드 1을 눌러야만 시작됩니다. 지금 눌러서 짧은 연습을 해보세요: ←→로 머신·스티머·오븐 레인을 오가고, 주문서에 찍힌 Q W E R을 순서대로 누르면 완성입니다.",
-    action: "{bar}을(를) 눌러 연습 시작",
-    await: { selector: '[data-station="bar"]', event: "click" },
+    body: "미니게임은 왼쪽 카드를 클릭하거나 키보드 1을 눌러야만 시작됩니다. 지금 왼쪽 {bar} 카드를 눌러 짧은 연습을 해보세요: ←→로 머신·스티머·오븐 레인을 오가고, 주문서에 찍힌 Q W E R을 순서대로 누르면 완성입니다.",
+    action: "왼쪽 {bar} 카드를 눌러 연습 시작",
+    await: { selector: '.arcade-home-card[data-station="bar"]', event: "click" },
     practice: "bar",
   },
   {
     id: "hall",
-    target: '.station-group [data-station="hall"]',
+    target: '.arcade-home-card[data-station="hall"]',
     title: "{hall} — 치우는 자리 (직접 해봅시다)",
-    body: "이번엔 {hall}입니다 — 클릭하거나 키보드 2. ←→로 테이블을 오가고, 말풍선에 찍힌 키를 먼저 누른 뒤(주문서 Q · 서빙 W · 응대 E · 정리 R) 스페이스를 두 번 연타하면 처리됩니다. 손님 많은 시간대엔 말풍선이 쏟아집니다.",
-    action: "{hall}을(를) 눌러 연습 시작",
-    await: { selector: '[data-station="hall"]', event: "click" },
+    body: "이번엔 왼쪽 {hall} 카드입니다 — 클릭하거나 키보드 2. ←→로 테이블을 오가고, 말풍선에 찍힌 키를 먼저 누른 뒤(주문서 Q · 서빙 W · 응대 E · 정리 R) 스페이스를 두 번 연타하면 처리됩니다. 손님 많은 시간대엔 말풍선이 쏟아집니다.",
+    action: "왼쪽 {hall} 카드를 눌러 연습 시작",
+    await: { selector: '.arcade-home-card[data-station="hall"]', event: "click" },
     practice: "hall",
   },
   {
     id: "door",
-    target: '.station-group [data-station="door"]',
+    target: '.arcade-home-card[data-station="door"]',
     title: "{door} — 불러오는 자리 (직접 해봅시다)",
-    body: "마지막으로 {door} — 클릭하거나 키보드 3. ←→만으로 조작하는 전단지 돌리기입니다. 행인은 잡으면 매출, 진상은 잡으면 돈 안 내고 짜증만, 리뷰어는 복불복. 피크 시간대나 성수기 달엔 사람이 훨씬 많이 쏟아집니다 — 화면 위 표시를 보세요.",
-    action: "{door}을(를) 눌러 연습 시작",
-    await: { selector: '[data-station="door"]', event: "click" },
+    body: "마지막으로 왼쪽 {door} 카드 — 클릭하거나 키보드 3. ←→만으로 조작하는 전단지 돌리기입니다. 행인은 잡으면 매출, 진상은 잡으면 돈 안 내고 짜증만, 리뷰어는 복불복. 피크 시간대나 성수기 달엔 사람이 훨씬 많이 쏟아집니다 — 화면 위 표시를 보세요.",
+    action: "왼쪽 {door} 카드를 눌러 연습 시작",
+    await: { selector: '.arcade-home-card[data-station="door"]', event: "click" },
     practice: "door",
   },
   {
@@ -127,7 +127,18 @@ export class Tutorial {
     this.root.querySelector("#tut-next").addEventListener("click", () => this.advance());
     window.addEventListener("resize", this.reposition);
     window.addEventListener("scroll", this.reposition, true);
+    // 화면(캔버스·줌·레이아웃)이 자리 잡는 걸 지켜보다 링을 다시 맞춘다 — "박스가 떠 있는" 문제 해결
+    this.ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => this.reposition()) : null;
+    this.ro?.observe(document.body);
+    const screenEl = document.querySelector("#screen");
+    if (screenEl) this.ro?.observe(screenEl);
     this.render();
+  }
+
+  // 렌더 직후 레이아웃이 안정될 때까지 여러 번 다시 맞춘다
+  scheduleReposition() {
+    requestAnimationFrame(() => this.reposition());
+    for (const ms of [120, 320, 600]) setTimeout(() => this.reposition(), ms);
   }
 
   get step() {
@@ -163,8 +174,14 @@ export class Tutorial {
     next.classList.toggle("is-hint", !step.passive);
     next.disabled = !step.passive;
 
+    // 이번 스텝의 대상 요소가 커지거나 줄어들면 즉시 링을 다시 맞춘다
+    if (this.observedTarget) { this.ro?.unobserve(this.observedTarget); this.observedTarget = null; }
+    const targetEl = step.target ? document.querySelector(step.target) : null;
+    if (targetEl && this.ro) { this.ro.observe(targetEl); this.observedTarget = targetEl; }
+
     this.bindAwait(step);
     this.reposition();
+    this.scheduleReposition();
   }
 
   bindAwait(step) {
@@ -261,6 +278,8 @@ export class Tutorial {
     this.cleanupAwait?.();
     window.removeEventListener("resize", this.reposition);
     window.removeEventListener("scroll", this.reposition, true);
+    this.ro?.disconnect();
+    this.ro = null;
     this.root?.remove();
     this.root = null;
     markCompleted();

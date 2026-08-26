@@ -756,10 +756,10 @@ function renderWizard() {
           ${steps.map((item, index) => `<li class="${index === state.step ? "is-current" : ""} ${index < state.step || stepComplete(item.id) ? "is-done" : ""}"><button data-step="${index}" type="button" ${index > state.step && !stepComplete(step.id) ? "disabled" : ""}><b>${String(index + 1).padStart(2, "0")}</b><span>${item.label}</span></button></li>`).join("")}
         </ol>
         <div class="capital-tracker ${budgetDelta < 0 ? "is-flash" : ""}">
-          <div class="ct-now"><span>남는 운전자금</span><strong class="${costs.remaining < 300 ? "is-danger" : ""}">${formatMoney(costs.remaining)}</strong></div>
+          <div class="ct-now"><span class="ct-label">남는<br />운전자금</span><strong class="${costs.remaining < 300 ? "is-danger" : ""}">${formatMoney(costs.remaining)}</strong></div>
           ${pageDiffLines.length ? `<div class="ct-diff">
             <em>이 페이지에서 ${formatMoney(state.pageStart.remaining)} →</em>
-            ${pageDiffLines.map((line) => `<span>${line.label} <b>−${formatMoney(line.delta)}</b></span>`).join("")}
+            ${pageDiffLines.map((line) => `<span class="ct-diff-line"><i>${line.label}</i><b>−${formatMoney(line.delta)}</b></span>`).join("")}
           </div>` : ""}
           ${costs.loan ? `<div class="ct-loan">대출 ${formatMoney(costs.loan, true)} · 월 이자 ${formatMoney(costs.loan * LOAN_ANNUAL_RATE / 12)}</div>` : ""}
           ${(costs.remaining < 1500 || lockedChoices) && state.loanUnits < LOAN_MAX_UNITS ? `<button class="ct-loan-btn" id="take-loan" type="button">＋ ${formatMoney(LOAN_UNIT, true)} 대출받기 <small>월 이자 ${formatMoney(LOAN_UNIT * LOAN_ANNUAL_RATE / 12)}</small></button>` : ""}
@@ -1257,14 +1257,6 @@ function renderOperations() {
                 <span class="work-left" id="work-left">—</span>
                 <span class="work-key" aria-hidden="true">SPACE</span>
               </button>
-              <div class="station-group">
-                ${OWNER_STATIONS.map((station) => `
-                  <button class="station-button" data-station="${station.id}" type="button" title="${station.description}">
-                    <span class="station-icon" aria-hidden="true">${station.icon}</span>
-                    <span class="station-name" data-station-name="${station.id}">${snapshot.stationNames?.[station.id] ?? station.name}</span>
-                    <span class="station-key">${station.key}</span>
-                  </button>`).join("")}
-              </div>
               <button class="station-button station-auto" id="station-auto" type="button" title="사장이 병목을 보고 알아서 움직입니다">
                 <span class="station-icon" aria-hidden="true">🤖</span>
                 <span class="station-name">자동</span>
