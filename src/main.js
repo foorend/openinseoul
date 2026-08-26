@@ -253,26 +253,13 @@ function renderLanding() {
         <div>
           <p class="eyebrow">서울 카페 창업 시뮬레이션</p>
           <h1>OPEN<br />IN <em>SEOUL</em><small class="hero-cafe-tag">: CAFE</small></h1>
-          <p class="hero-subtitle">여유로운 동네 카페 사장이 될까,<br /><em>떼돈 버는 카페 대표님</em>이 될까.</p>
+          <p class="hero-subtitle">나도 서울에서<br /><em>카페 하나 차려보려고~</em></p>
 
           <div class="hero-cta-row is-primary">
-            <button class="primary-button is-hero" id="start-game" type="button"><span>카페 차리러 가기</span><span aria-hidden="true">→</span></button>
-            <p>강남·을지로·성수·신촌·강동.<br />자본 규모부터 전부 당신이 정합니다.</p>
+            <button class="primary-button is-hero is-mega" id="start-game" type="button"><span>카페 차리러 가기</span><span aria-hidden="true">→</span></button>
           </div>
 
-          <div class="dream-cards is-quiet" aria-label="가능한 결말">
-            <div class="dream-card">
-              <span class="dream-icon" aria-hidden="true">🌿</span>
-              <b>여유로운 동네 사장</b>
-              <span>저녁이 있고, 단골 이름을 다 압니다.</span>
-            </div>
-            <div class="dream-vs" aria-hidden="true">or</div>
-            <div class="dream-card is-gold">
-              <span class="dream-icon" aria-hidden="true">👑</span>
-              <b>떼돈 버는 대표님</b>
-              <span>직원이 돌아가고, 2호점을 얘기합니다.</span>
-            </div>
-          </div>
+          <p class="hero-subcopy">강남·을지로·성수·신촌·강동.<br />자본 규모부터 상권까지 직접 정하는<br /><em>현실적인 서울에서 카페 차리기 대작전!</em></p>
         </div>
         <div class="hero-meta">
           <div><span class="meta-label">캠페인</span><strong>1월 → 12월</strong></div>
@@ -284,9 +271,9 @@ function renderLanding() {
         <canvas class="hero-city-canvas" id="hero-canvas"></canvas>
         <div class="hero-sticker">ONE<br />MORE<br />SHIFT</div>
         <div class="hero-budget">
-          <span class="meta-label">손님이 몰리면</span>
-          <strong>사장이 뜁니다</strong>
-          <span class="meta-label">바에서 커피 · 홀에서 정리 · 문 앞에서 호객</span>
+          <span class="meta-label">현실적인 자본 게임 속</span>
+          <strong>힐링할 수 있는 미니게임 3종</strong>
+          <span class="meta-label">키친에서 작업 · 홀에서 서빙 · 문 앞에서 전단지 돌리기</span>
         </div>
       </div>
     </section>

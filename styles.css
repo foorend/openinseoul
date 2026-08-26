@@ -2803,3 +2803,17 @@ canvas { image-rendering: pixelated; }
 /* 스킵 버튼 — 남은 하루를 즉시 계산해 리포트로 */
 .station-skip .station-icon { color: #f0c674; }
 .station-skip { border-color: rgba(240, 198, 116, 0.45); }
+
+/* ═══ 랜딩 리카피 — 큰 CTA + 서브카피 아래로 ═══ */
+.primary-button.is-hero.is-mega {
+  padding: 24px 52px;
+  font-size: 21px;
+}
+.hero-subcopy {
+  margin-top: 20px;
+  max-width: 34ch;
+  font-size: clamp(0.9375rem, 1.3vw, 1.125rem);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.hero-subcopy em { font-style: normal; font-weight: 700; color: var(--crema-soft); }
