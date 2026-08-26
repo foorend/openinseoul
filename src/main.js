@@ -61,7 +61,7 @@ const state = {
   menuIds: [],
   beanTierId: null,
   ownerRoleId: null,
-  supplyModeId: "bake",
+  supplyModeId: null,
   hourPlanId: "standard",
   businessTypeId: "sole",
   campaign: null,
@@ -191,7 +191,7 @@ function resetGame() {
     menuIds: [],
     beanTierId: null,
     ownerRoleId: null,
-    supplyModeId: "bake",
+    supplyModeId: null,
     hourPlanId: "standard",
     businessTypeId: "sole",
     campaign: null,
@@ -214,6 +214,24 @@ function resetGame() {
   render();
 }
 
+// ── 한 화면 맞춤 ─────────────────────────────────────────────
+// 내용이 뷰포트를 넘치면 화면 전체를 조금 줄여 스크롤 없이 다 보이게 한다.
+// 단, 리포트류는 가독성이 우선 — 살짝만 줄이고 스크롤을 허용한다.
+const READABLE_VIEWS = new Set(["report", "monthClose", "monthPlan", "final"]);
+
+function fitScreenToViewport() {
+  screen.style.zoom = "";
+  const chrome = 62 + 30 + 4; // 상단바 + 하단 스트립 + 여유
+  const available = window.innerHeight - chrome;
+  const content = screen.scrollHeight;
+  if (content > available + 2) {
+    const floor = READABLE_VIEWS.has(state.view) ? 0.88 : 0.68;
+    screen.style.zoom = String(Math.max(floor, available / content));
+  }
+}
+
+window.addEventListener("resize", () => fitScreenToViewport());
+
 function render() {
   if (state.view === "landing") renderLanding();
   else if (state.view === "wizard") renderWizard();
@@ -223,6 +241,8 @@ function render() {
   else if (state.view === "monthClose") renderMonthClose();
   else if (state.view === "monthPlan") renderImprovements();
   else if (state.view === "final") renderYearEnd();
+  // 렌더 직후 두 프레임 뒤(폰트·캔버스 마운트 반영 후)에 화면을 맞춘다
+  requestAnimationFrame(() => requestAnimationFrame(fitScreenToViewport));
 }
 
 function renderLanding() {
@@ -1253,6 +1273,11 @@ function renderOperations() {
                 <span class="station-name">자동</span>
                 <span class="station-key">0</span>
               </button>
+              <button class="station-button station-skip" id="skip-day" type="button" title="남은 하루를 즉시 계산하고 마감 리포트로 직행합니다">
+                <span class="station-icon" aria-hidden="true">⏭</span>
+                <span class="station-name">스킵</span>
+                <span class="station-key">리포트</span>
+              </button>
             </div>
             <div class="live-kpis"><div class="live-kpi"><span class="metric-label">CASH</span><strong id="hud-cash">${formatMoney(snapshot.cash, true)}</strong></div><div class="live-kpi"><span class="metric-label">SALES</span><strong id="hud-sales">${formatMoney(snapshot.metrics.revenue, true)}</strong></div></div>
           </div>
@@ -1302,6 +1327,17 @@ function renderOperations() {
       document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 1));
       toast("수동 배치 — 자리를 직접 정하세요. 미니게임은 클릭·1/2/3으로 시작합니다.");
     }
+  });
+  // 스킵 = 기다림도 생략: 남은 하루를 즉시 계산하고 마감 리포트로 직행한다
+  document.querySelector("#skip-day").addEventListener("click", () => {
+    if (state.arcadeOpen) { toast("미니게임을 끝내거나 그만둔 뒤에 스킵할 수 있습니다."); return; }
+    const sim2 = state.simulation;
+    if (sim2.activeDilemma) sim2.resolveDilemma(sim2.activeDilemma.options.at(-1).id);
+    if (!sim2.finished) sim2.runToEnd();
+    state.reports.push(sim2.lastReport);
+    sounds.bell();
+    toast("남은 하루를 스킵했습니다 — 바로 마감 리포트입니다.");
+    setView("report");
   });
   // 스페이스 바로 출근/쉬기 — 손이 제일 빠른 키에 제일 자주 쓰는 동작을 둔다
   const spaceHandler = (event) => {
@@ -1837,14 +1873,18 @@ function renderReport() {
         if (!parts.length) return "";
         return `<div class="owner-report"><span class="meta-label">사장의 손</span><p>${parts.join(" · ")}</p></div>`;
       })()}
-      ${report.influencerNote ? `<div class="influencer-note ${report.influencerNote.tone}"><span class="meta-label">AFTER HOURS</span><p>${report.influencerNote.text}</p></div>` : ""}
-      <section class="report-panel notebook-panel">
-        <span class="meta-label">사장의 장사 노트 — 오늘까지의 기록</span>
-        <h2>손님이 가르쳐 준 것, 다음 판의 무기</h2>
-        <p class="notebook-lede">영업 중엔 볼 시간이 없었죠. 여기서 읽으세요 — ◎ 찰떡 조합은 밀고, △ 불일치 메뉴는 다음 달 '메뉴 개편'에서 빼는 게 정석입니다. 이 표는 월 계획 화면의 메뉴 카드에도 그대로 붙어 있습니다.</p>
-        ${notebookTableMarkup(state.simulation)}
-      </section>
-      <div class="review-strip">${reviews.map((review) => `<article class="review-card ${review.tone}"><span class="meta-label">${review.stars ? `${"★".repeat(Math.floor(review.stars))} ${review.stars.toFixed(1)}` : "NO REVIEW"} · ${review.customer}</span><p>“${escapeHtml(review.text)}”</p><span class="metric-label">${review.reason ? (review.tone === "good" ? PRAISE_EXPLANATIONS[review.reason] : LOSS_EXPLANATIONS[review.reason]) ?? "고객 경험" : "행동 데이터 우선"}</span></article>`).join("")}</div>
+      <div class="report-bottom">
+        <section class="report-panel notebook-panel">
+          <span class="meta-label">사장의 장사 노트 — 오늘까지의 기록</span>
+          <h2>손님이 가르쳐 준 것, 다음 판의 무기</h2>
+          <p class="notebook-lede">◎ 찰떡 조합은 밀고, △ 불일치 메뉴는 다음 달 '메뉴 개편'에서 빼는 게 정석입니다. 이 표는 월 계획의 메뉴 카드에도 그대로 붙어 있습니다.</p>
+          ${notebookTableMarkup(state.simulation)}
+        </section>
+        <div class="review-stack">
+          ${report.influencerNote ? `<div class="influencer-note ${report.influencerNote.tone}"><span class="meta-label">AFTER HOURS</span><p>${report.influencerNote.text}</p></div>` : ""}
+          ${reviews.map((review) => `<article class="review-card ${review.tone}"><span class="meta-label">${review.stars ? `${"★".repeat(Math.floor(review.stars))} ${review.stars.toFixed(1)}` : "NO REVIEW"} · ${review.customer}</span><p>“${escapeHtml(review.text)}”</p><span class="metric-label">${review.reason ? (review.tone === "good" ? PRAISE_EXPLANATIONS[review.reason] : LOSS_EXPLANATIONS[review.reason]) ?? "고객 경험" : "행동 데이터 우선"}</span></article>`).join("")}
+        </div>
+      </div>
       <div class="report-actions">${!isWeekendReport && state.campaign.month === 1
         ? `<button class="cta" id="go-next" type="button"><span>주말 영업 준비</span><span aria-hidden="true">→</span></button>`
         : `<button class="cta" id="go-next" type="button"><span>${monthInfo(state.campaign.month).name} 마감 정산</span><span aria-hidden="true">→</span></button>`}</div>
