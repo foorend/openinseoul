@@ -1317,12 +1317,19 @@ function renderOperations() {
       toast("수동 배치 — 자리를 직접 정하세요. 미니게임은 클릭·1/2/3으로 시작합니다.");
     }
   });
-  // 스킵 = 기다림도 생략: 남은 하루를 즉시 계산하고 마감 리포트로 직행한다
+  // 스킵 = 기다림도 생략: 남은 하루를 즉시 계산하고 마감 리포트로 직행한다.
+  // 계산 도중 돌발 상황이 떠서 시간이 멈추면 기본 선택으로 정리하고 끝까지 간다.
   document.querySelector("#skip-day").addEventListener("click", () => {
     if (state.arcadeOpen) { toast("미니게임을 끝내거나 그만둔 뒤에 스킵할 수 있습니다."); return; }
     const sim2 = state.simulation;
-    if (sim2.activeDilemma) sim2.resolveDilemma(sim2.activeDilemma.options.at(-1).id);
-    if (!sim2.finished) sim2.runToEnd();
+    for (let guard = 0; guard < 8 && !sim2.finished; guard += 1) {
+      if (sim2.activeDilemma) {
+        const fallback = sim2.activeDilemma.options.find((option) => option.default) ?? sim2.activeDilemma.options.at(-1);
+        sim2.resolveDilemma(fallback.id);
+      }
+      sim2.runToEnd();
+    }
+    if (!sim2.finished || !sim2.lastReport) { toast("마감 계산이 끝나지 않았습니다. 다시 시도해 주세요."); return; }
     state.reports.push(sim2.lastReport);
     sounds.bell();
     toast("남은 하루를 스킵했습니다 — 바로 마감 리포트입니다.");

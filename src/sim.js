@@ -662,6 +662,23 @@ export class RestaurantSimulation {
     this.dilemmaHandler = handler;
   }
 
+  // 개발·데모용: 조건과 무관하게 아직 안 나온 돌발 상황 하나를 강제로 띄운다.
+  debugForceDilemma() {
+    if (this.activeDilemma) return true;
+    const dilemma = DILEMMAS.find((item) =>
+      !this.firedDilemmas.has(item.id)
+      && (!item.districts || item.districts.includes(this.district.id)));
+    if (!dilemma || !this.dilemmaHandler) return false;
+    this.firedDilemmas.add(dilemma.id);
+    this.usedDilemmas.add(dilemma.id);
+    this.dilemmasToday += 1;
+    this.activeDilemma = dilemma;
+    this.speed = 0;
+    this.running = false;
+    this.dilemmaHandler(dilemma);
+    return true;
+  }
+
   onFeed(listener) {
     this.feedListeners.add(listener);
     return () => this.feedListeners.delete(listener);
