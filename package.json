@@ -1,0 +1,11 @@
+{
+  "name": "open-in-seoul",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "python3 -m http.server 4173",
+    "test": "node --test",
+    "check": "node --check src/main.js && node --check src/sim.js && node --check src/scene.js && node --check src/data.js"
+  }
+}
