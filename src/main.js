@@ -272,7 +272,7 @@ function renderLanding() {
         <div class="hero-sticker">ONE<br />MORE<br />SHIFT</div>
         <div class="hero-budget">
           <span class="meta-label">현실적인 자본 게임 속</span>
-          <strong>힐링할 수 있는 미니게임 3종</strong>
+          <strong>힐링할 수 있는 미니게임</strong>
           <span class="meta-label">키친에서 작업 · 홀에서 서빙 · 문 앞에서 전단지 돌리기</span>
         </div>
       </div>
