@@ -158,7 +158,7 @@ class ArcadeShell {
     this.H = h;
     this.duration = this.practice ? 10 : duration;
     this.timeLeft = this.duration;
-    this.keys = { left: false, right: false, space: false };
+    this.keys = { left: false, right: false, up: false, down: false, space: false };
     this.floaters = [];
     this.particles = [];
     this.flash = null;
@@ -206,9 +206,11 @@ class ArcadeShell {
     const code = event.code;
     if (code === "ArrowLeft") { this.keys.left = true; this.leftTap = true; }
     else if (code === "ArrowRight") { this.keys.right = true; this.rightTap = true; }
+    else if (code === "ArrowUp") { this.keys.up = true; }
+    else if (code === "ArrowDown") { this.keys.down = true; }
     else if (code === "Space") { this.keys.space = true; this.spaceTap = true; }
     else if (["KeyQ", "KeyW", "KeyE", "KeyR"].includes(code)) { this.actionTap = code[3]; }
-    else if (!["Digit1", "Digit2", "Digit3", "ArrowUp", "ArrowDown"].includes(code)) return;
+    else if (!["Digit1", "Digit2", "Digit3"].includes(code)) return;
     // 게임에서 쓰는 키는 매장으로 새지 않는다
     event.preventDefault();
     event.stopPropagation();
@@ -217,6 +219,8 @@ class ArcadeShell {
   keyup(event) {
     if (event.code === "ArrowLeft") this.keys.left = false;
     if (event.code === "ArrowRight") this.keys.right = false;
+    if (event.code === "ArrowUp") this.keys.up = false;
+    if (event.code === "ArrowDown") this.keys.down = false;
     if (event.code === "Space") this.keys.space = false;
   }
 
@@ -389,15 +393,19 @@ export class FlyerRun extends ArcadeShell {
         <span><i style="background:#d9a441"></i>행인 — 잡으면 매출</span>
         <span><i style="background:#c25a4a"></i>진상 — 잡으면 돈 안 내고 짜증만</span>
         <span><i style="background:#8a6fb8"></i>리뷰어 — 복불복 (호평/혹평)</span>
-        <b>←→ 이동</b>`,
+        <b>←→↑↓ 이동</b>`,
     });
     this.stats = { score: 0, converted: 0, goodReviews: 0, badReviews: 0, jinsang: 0 };
     this.people = [];
+    // 탑뷰 — 사장이 거리 위를 사방으로 뛰어다닌다
     this.playerX = this.W / 2;
+    this.playerY = this.H * 0.62;
+    this.playerFacing = 1;
     this.nextSpawn = 0;
     this.shake = 0;
   }
 
+  // 화면 가장자리에서 등장해 제각각의 방향으로 거리를 가로지른다
   spawnPerson() {
     let cursor = Math.random();
     let kind = FLYER_KINDS[0];
@@ -405,15 +413,35 @@ export class FlyerRun extends ArcadeShell {
       if (cursor < item.weight) { kind = item; break; }
       cursor -= item.weight;
     }
+    const speed = kind.fall * 0.75 * (0.85 + Math.random() * 0.4);
+    const edge = Math.random();
+    let x;
+    let y;
+    let heading;
+    if (edge < 0.3) {          // 왼쪽 → 오른쪽으로
+      x = -34; y = 60 + Math.random() * (this.H - 160);
+      heading = (Math.random() - 0.5) * 0.9;
+    } else if (edge < 0.6) {   // 오른쪽 → 왼쪽으로
+      x = this.W + 34; y = 60 + Math.random() * (this.H - 160);
+      heading = Math.PI + (Math.random() - 0.5) * 0.9;
+    } else if (edge < 0.85) {  // 위 → 아래로
+      x = 40 + Math.random() * (this.W - 80); y = -34;
+      heading = Math.PI / 2 + (Math.random() - 0.5) * 0.9;
+    } else {                   // 아래 → 위로
+      x = 40 + Math.random() * (this.W - 80); y = this.H + 34;
+      heading = -Math.PI / 2 + (Math.random() - 0.5) * 0.9;
+    }
     this.people.push({
       kind,
-      x: 46 + Math.random() * (this.W - 92),
-      y: -30,
-      speed: kind.fall * (0.85 + Math.random() * 0.4),
+      x,
+      y,
+      vx: Math.cos(heading) * speed,
+      vy: Math.sin(heading) * speed,
       wobble: Math.random() * Math.PI * 2,
       skin: SKIN_TONES[Math.floor(Math.random() * SKIN_TONES.length)],
       hair: HAIR_TONES[Math.floor(Math.random() * HAIR_TONES.length)],
       hit: false,
+      entered: false,
     });
   }
 
@@ -461,10 +489,13 @@ export class FlyerRun extends ArcadeShell {
   }
 
   update(dt) {
-    const speed = 380;
-    if (this.keys.left) this.playerX -= speed * dt;
-    if (this.keys.right) this.playerX += speed * dt;
+    const speed = 330;
+    if (this.keys.left) { this.playerX -= speed * dt; this.playerFacing = -1; }
+    if (this.keys.right) { this.playerX += speed * dt; this.playerFacing = 1; }
+    if (this.keys.up) this.playerY -= speed * dt;
+    if (this.keys.down) this.playerY += speed * dt;
     this.playerX = Math.max(36, Math.min(this.W - 36, this.playerX));
+    this.playerY = Math.max(70, Math.min(this.H - 40, this.playerY));
 
     this.nextSpawn -= dt;
     if (this.nextSpawn <= 0) {
@@ -472,26 +503,32 @@ export class FlyerRun extends ArcadeShell {
       // 피크 시간대·성수기 달에는 거리에 사람이 그만큼 더 쏟아진다
       this.nextSpawn = (0.55 + Math.random() * 0.45) / Math.max(0.5, this.crowd.factor);
     }
-    const playerY = this.H - 80;
     for (const person of this.people) {
-      person.y += person.speed * dt;
+      person.x += person.vx * dt;
+      person.y += person.vy * dt;
       person.wobble += dt * 3;
-      if (!person.hit && Math.abs(person.y - playerY) < 30 && Math.abs(person.x - this.playerX) < 38) this.touch(person);
-      if (!person.hit && person.kind.id === "sure" && person.y > this.H - 36) {
+      const inside = person.x > -40 && person.x < this.W + 40 && person.y > -40 && person.y < this.H + 40;
+      if (inside) person.entered = true;
+      if (!person.hit && Math.hypot(person.y - this.playerY, person.x - this.playerX) < 44) this.touch(person);
+      // 단골은 만나지 못해도 어차피 온다 — 화면을 빠져나가는 순간 자동 집계
+      if (!person.hit && person.entered && !inside && person.kind.id === "sure") {
         person.hit = true;
         this.stats.score += 1;
         this.sim.injectWalkin("sure");
-        this.addFloat(person.x, this.H - 50, "+1점", "#8fd6ab");
+        this.addFloat(Math.max(30, Math.min(this.W - 30, person.x)), Math.max(40, Math.min(this.H - 20, person.y)), "+1점", "#8fd6ab");
       }
     }
-    this.people = this.people.filter((person) => !person.hit && person.y < this.H + 40);
+    this.people = this.people.filter((person) => !person.hit && (!person.entered
+      || (person.x > -60 && person.x < this.W + 60 && person.y > -60 && person.y < this.H + 60)));
     if (this.shake) this.shake = Math.max(0, this.shake - dt);
   }
 
   render(ctx) {
     if (this.shake) ctx.translate((Math.random() - 0.5) * 9 * this.shake, (Math.random() - 0.5) * 9 * this.shake);
-    if (artReady("mg-street")) {
-      // 아트 모드 — 일러스트 밤거리
+    if (artReady("mg-street-top")) {
+      // 아트 모드 — 탑뷰 일러스트 거리
+      coverDraw(ctx, "mg-street-top", this.W, this.H);
+    } else if (artReady("mg-street")) {
       coverDraw(ctx, "mg-street", this.W, this.H);
     } else {
       // 밤거리 — 가로등 광원과 창문 불빛
@@ -521,13 +558,30 @@ export class FlyerRun extends ArcadeShell {
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.W, y); ctx.stroke();
       }
     }
-    // 떨어지는 사람들
-    for (const person of this.people) {
-      const sway = Math.sin(person.wobble) * 7;
+    // 거리의 사람들 + 사장 — y(깊이)순으로 정렬해 그린다
+    const moving = this.keys.left || this.keys.right || this.keys.up || this.keys.down;
+    const drawables = this.people.map((person) => ({ y: person.y, person }));
+    drawables.push({ y: this.playerY, player: true });
+    drawables.sort((a, b) => a.y - b.y);
+    for (const item of drawables) {
+      if (item.player) {
+        paintPerson(ctx, {
+          x: this.playerX, y: this.playerY, scale: 1.12,
+          body: this.sim.ownerLook?.color ?? "#23241f",
+          hair: this.sim.ownerLook?.hair, face: "🙂", prop: "📄",
+          time: this.time, walk: moving ? 1 : 0,
+          facing: this.playerFacing,
+          glow: "rgba(217,164,65,.6)",
+        });
+        continue;
+      }
+      const person = item.person;
+      const sway = Math.sin(person.wobble) * 5;
       paintPerson(ctx, {
-        x: person.x + sway, y: person.y, body: person.kind.body,
+        x: person.x + sway, y: person.y, scale: 0.96, body: person.kind.body,
         skin: person.skin, hair: person.hair, face: person.kind.face, prop: person.kind.prop,
         time: this.time, walk: 1,
+        facing: person.vx >= 0 ? 1 : -1,
       });
       ctx.font = "700 12px 'NeoDunggeunmo', sans-serif";
       ctx.fillStyle = "rgba(240,230,214,.85)";
@@ -537,15 +591,6 @@ export class FlyerRun extends ArcadeShell {
       ctx.strokeText(person.kind.label, person.x + sway, person.y + 18);
       ctx.fillText(person.kind.label, person.x + sway, person.y + 18);
     }
-    // 사장 — 전단지 뭉치를 든
-    paintPerson(ctx, {
-      x: this.playerX, y: this.H - 46, scale: 1.18,
-      body: this.sim.ownerLook?.color ?? "#23241f",
-      hair: this.sim.ownerLook?.hair, face: "🙂", prop: "📄",
-      time: this.time, walk: this.keys.left || this.keys.right ? 1 : 0,
-      facing: this.keys.right ? 1 : -1,
-      glow: "rgba(217,164,65,.6)",
-    });
   }
 
   hudText() { return `${this.stats.score}점 · 손님 ${this.stats.converted}`; }
@@ -603,6 +648,9 @@ export class KitchenRush extends ArcadeShell {
     this.slot = 0;
     this.stats = { made: 0, missed: 0, wrong: 0 };
     this.nextOrder = 0.3;
+    this.playerFacing = 1;
+    this.workPulse = 0;
+    this.ovenAnims = [];
   }
 
   spawnOrder() {
@@ -617,8 +665,11 @@ export class KitchenRush extends ArcadeShell {
   }
 
   update(dt) {
-    if (this.leftTap) this.slot = Math.max(0, this.slot - 1);
-    if (this.rightTap) this.slot = Math.min(this.lanes.length - 1, this.slot + 1);
+    if (this.leftTap) { this.slot = Math.max(0, this.slot - 1); this.playerFacing = -1; }
+    if (this.rightTap) { this.slot = Math.min(this.lanes.length - 1, this.slot + 1); this.playerFacing = 1; }
+    if (this.workPulse > 0) this.workPulse -= dt;
+    for (const anim of this.ovenAnims) anim.t += dt;
+    this.ovenAnims = this.ovenAnims.filter((anim) => anim.t < 0.85);
 
     this.nextOrder -= dt;
     if (this.nextOrder <= 0) {
@@ -635,6 +686,7 @@ export class KitchenRush extends ArcadeShell {
       if (this.actionTap === expected) {
         lane.order.step += 1;
         lane.order.pop = 0.25;
+        this.workPulse = 0.35; // 사장이 손을 놀린다
         this.burst(lane.x, this.H * 0.4, "#f0c674", 6, 90);
         this.sounds?.click();
         if (lane.order.step >= lane.order.combo.length) {
@@ -643,6 +695,11 @@ export class KitchenRush extends ArcadeShell {
           this.sim.expressServe();
           this.burst(lane.x, this.H * 0.42, "#8fd6ab", 18, 150);
           this.addFloat(lane.x, this.H * 0.36, `${lane.order.menu.name} 완성!`, "#8fd6ab");
+          // 베이커리 메뉴는 반죽을 오븐에 넣는 모션으로 마무리
+          if (lane.order.menu.caseItem) {
+            this.ovenAnims.push({ t: 0, fromX: lane.x, fromY: this.H * 0.72, toX: this.lanes[2].x + 26, toY: this.H * 0.4 });
+            this.workPulse = 0.6;
+          }
           this.sounds?.good();
           lane.order = null;
         }
@@ -790,12 +847,41 @@ export class KitchenRush extends ArcadeShell {
         }
       }
     }
-    // 사장 — 셰프 모드
+    // 반죽 → 오븐 궤적 (베이커리 완성 모션)
+    for (const anim of this.ovenAnims) {
+      const progress = Math.min(1, anim.t / 0.8);
+      const ax = anim.fromX + (anim.toX - anim.fromX) * progress;
+      const arc = Math.sin(progress * Math.PI) * 90;
+      const ay = anim.fromY + (anim.toY - anim.fromY) * progress - arc;
+      ctx.save();
+      ctx.fillStyle = "#e8c98a";
+      ctx.strokeStyle = "#a97b3f";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(ax, ay, 11, 9, progress * 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (progress > 0.92) {
+        // 오븐 글로우 플래시
+        const ovenGlow = ctx.createRadialGradient(anim.toX, anim.toY, 4, anim.toX, anim.toY, 70);
+        ovenGlow.addColorStop(0, "rgba(255, 170, 80, .55)");
+        ovenGlow.addColorStop(1, "transparent");
+        ctx.globalCompositeOperation = "screen";
+        ctx.fillStyle = ovenGlow;
+        ctx.fillRect(anim.toX - 70, anim.toY - 70, 140, 140);
+      }
+      ctx.restore();
+    }
+
+    // 사장 — 셰프 모드: 이동 방향을 보고, 조리 중엔 몸을 쓴다
     paintPerson(ctx, {
       x: this.lanes[this.slot].x, y: this.H * 0.76, scale: 1.25,
       body: this.sim.ownerLook?.color ?? "#23241f",
       hair: this.sim.ownerLook?.hair, face: "🧑‍🍳", prop: "🥄",
-      time: this.time, walk: 0, glow: "rgba(217,164,65,.5)",
+      time: this.time * (this.workPulse > 0 ? 2.2 : 1),
+      walk: this.workPulse > 0 ? 1 : 0,
+      facing: this.playerFacing,
+      glow: "rgba(217,164,65,.5)",
     });
   }
 
@@ -844,6 +930,7 @@ export class HallService extends ArcadeShell {
     this.slot = 0;
     this.stats = { handled: 0, missed: 0 };
     this.nextTask = 0.4;
+    this.playerFacing = -1;
   }
 
   spawnTask() {
@@ -856,6 +943,9 @@ export class HallService extends ArcadeShell {
     if (caller) { kind = HALL_TASKS[2]; caller.arcadeTaken = true; table.agentId = caller.id; }
     else if (dirty) { kind = HALL_TASKS[3]; dirty.arcadeTaken = true; table.tableId = dirty.id; }
     else kind = HALL_TASKS[Math.floor(Math.random() * 2)];
+    // 정리(빈 자리) 빼고는 부르는 손님이 반드시 앉아 있다
+    if (kind.id !== "bus") table.guest = true;
+    else table.guest = false;
     table.task = { kind, keyDone: false, taps: 0, patience: 8.5, pop: 0 };
   }
 
@@ -866,7 +956,13 @@ export class HallService extends ArcadeShell {
     else if (table.task.kind.id === "bus" && table.tableId != null) this.sim.expressClean(table.tableId);
     else this.sim.hallDelight();
     this.burst(table.x, this.H * 0.44, "#8fd6ab", 16, 140);
-    this.addFloat(table.x, this.H * 0.4, `${table.task.kind.label} 완료!`, "#8fd6ab");
+    // 손님이 폴짝 뛰며 인사한다
+    if (table.guest) {
+      table.react = { type: "happy", t: 1.1, max: 1.1 };
+      this.addFloat(table.x - 46, this.H * 0.5, "감사합니다~", "#ffd98a");
+    } else {
+      this.addFloat(table.x, this.H * 0.4, `${table.task.kind.label} 완료!`, "#8fd6ab");
+    }
     this.sounds?.good();
     table.task = null;
     table.agentId = null;
@@ -874,8 +970,8 @@ export class HallService extends ArcadeShell {
   }
 
   update(dt) {
-    if (this.leftTap) this.slot = Math.max(0, this.slot - 1);
-    if (this.rightTap) this.slot = Math.min(this.tables.length - 1, this.slot + 1);
+    if (this.leftTap) { this.slot = Math.max(0, this.slot - 1); this.playerFacing = -1; }
+    if (this.rightTap) { this.slot = Math.min(this.tables.length - 1, this.slot + 1); this.playerFacing = 1; }
 
     this.nextTask -= dt;
     if (this.nextTask <= 0) {
@@ -888,6 +984,7 @@ export class HallService extends ArcadeShell {
     // 1단계: 과제 고유 키(Q/W/E/R) — 맞는 키를 먼저 눌러야 스페이스가 먹힌다
     if (this.actionTap && table.task) {
       const task = table.task;
+      this.playerFacing = -1; // 주문 받을 땐 손님(테이블 왼편) 쪽을 본다
       if (!task.keyDone && this.actionTap === task.kind.key) {
         task.keyDone = true;
         task.pop = 0.25;
@@ -897,6 +994,7 @@ export class HallService extends ArcadeShell {
       } else if (!task.keyDone) {
         this.breakCombo();
         task.patience -= 0.6;
+        if (table.guest) table.react = { type: "angry", t: 0.7, max: 0.7 };
         this.addFloat(table.x, this.H * 0.5, `삑! [${task.kind.key}]를 눌러야죠`, "#e07a6a");
         this.sounds?.bad();
       }
@@ -906,6 +1004,7 @@ export class HallService extends ArcadeShell {
     // 2단계: 스페이스 2연타로 마무리
     if (this.spaceTap && table.task) {
       const task = table.task;
+      this.playerFacing = -1;
       if (!task.keyDone) {
         this.addFloat(table.x, this.H * 0.5, `먼저 [${task.kind.key}] ${task.kind.label}!`, "#9c8b7c");
       } else {
@@ -920,12 +1019,17 @@ export class HallService extends ArcadeShell {
     }
 
     for (const item of this.tables) {
+      if (item.react) {
+        item.react.t -= dt;
+        if (item.react.t <= 0) item.react = null;
+      }
       if (!item.task) continue;
       if (item.task.pop > 0) item.task.pop -= dt;
       item.task.patience -= dt;
       if (item.task.patience <= 0) {
         this.stats.missed += 1;
         this.breakCombo();
+        if (item.guest) item.react = { type: "angry", t: 1.6, max: 1.6 };
         this.addFloat(item.x, this.H * 0.44, "늦었다…", "#e07a6a");
         this.sounds?.bad();
         item.task = null;
@@ -981,13 +1085,74 @@ export class HallService extends ArcadeShell {
     for (let i = 0; i < this.tables.length; i += 1) {
       const table = this.tables[i];
       const active = i === this.slot;
-      // 손님
+      // 손님 — 앉아서 부르고, 고마워하고, 짜증낸다
       if (table.guest) {
-        paintPerson(ctx, {
-          x: table.x - 46, y: this.H * 0.62, scale: 0.9,
-          body: table.guestColor, skin: table.guestSkin, hair: table.guestHair,
-          time: this.time, walk: 0,
-        });
+        const react = table.react;
+        const calling = table.task && !table.task.keyDone && table.task.kind.id !== "bus";
+        let jumpY = 0;
+        let shakeX = 0;
+        if (calling) jumpY = -Math.abs(Math.sin(this.time * 6)) * 7;
+        if (react?.type === "happy") {
+          const progress = 1 - react.t / react.max;
+          jumpY = -20 * Math.sin(Math.min(1, progress * 1.5) * Math.PI);
+        }
+        if (react?.type === "angry") shakeX = Math.sin(this.time * 34) * 3.2;
+        const gx = table.x - 50 + shakeX;
+        const gy = this.H * 0.665 + jumpY;
+        const seatedKey = i % 2 === 0 ? "seatedA" : "seatedB";
+        if (artMode && artReady(seatedKey)) {
+          drawFigure(ctx, seatedKey, gx, gy, { h: 92, facing: 1, time: this.time });
+          const headY = gy - 96;
+          if (calling) {
+            // 손을 흔들어 부른다
+            const wave = Math.sin(this.time * 10) * 4;
+            ctx.save();
+            ctx.strokeStyle = table.guestSkin ?? "#f0c39a";
+            ctx.lineWidth = 4.4;
+            ctx.lineCap = "round";
+            ctx.beginPath();
+            ctx.moveTo(gx + 12, headY + 26);
+            ctx.lineTo(gx + 22 + wave * 0.4, headY + 6 + wave);
+            ctx.stroke();
+            ctx.fillStyle = table.guestSkin ?? "#f0c39a";
+            ctx.beginPath();
+            ctx.arc(gx + 23 + wave * 0.4, headY + 3 + wave, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+          if (react?.type === "angry") {
+            // 붉은 짜증 스파크
+            ctx.save();
+            ctx.strokeStyle = "#e05a3a";
+            ctx.lineWidth = 3;
+            ctx.lineCap = "round";
+            const ax = gx + 20;
+            const ay = headY - 2;
+            for (let k = 0; k < 3; k += 1) {
+              const angle = -0.9 + k * 0.7;
+              ctx.beginPath();
+              ctx.moveTo(ax + Math.cos(angle) * 4, ay + Math.sin(angle) * 4);
+              ctx.lineTo(ax + Math.cos(angle) * 12, ay + Math.sin(angle) * 12);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+          if (react?.type === "happy" && react.t > react.max * 0.4) {
+            // 하트
+            ctx.save();
+            ctx.fillStyle = "rgba(240, 130, 130, .9)";
+            ctx.font = "800 15px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText("♥", gx + 16, headY - 8 - (1 - react.t / react.max) * 18);
+            ctx.restore();
+          }
+        } else {
+          paintPerson(ctx, {
+            x: table.x - 46, y: this.H * 0.62 + jumpY, scale: 0.9,
+            body: table.guestColor, skin: table.guestSkin, hair: table.guestHair,
+            time: this.time, walk: 0,
+          });
+        }
       }
       // 테이블
       if (artMode) {
@@ -1078,12 +1243,15 @@ export class HallService extends ArcadeShell {
         ctx.fillRect(table.x - 46, by + 76, 92 * Math.max(0, patience / 8.5), 6);
       }
     }
-    // 사장 — 쟁반을 든
+    // 사장 — 이동한 방향, 주문 받을 땐 손님 쪽을 본다
+    const working = !!this.tables[this.slot].task;
     paintPerson(ctx, {
       x: this.tables[this.slot].x, y: this.H * 0.85, scale: 1.22,
       body: this.sim.ownerLook?.color ?? "#23241f",
       hair: this.sim.ownerLook?.hair, face: "🙂", prop: "🫙",
-      time: this.time, walk: 0, glow: "rgba(217,164,65,.5)",
+      time: this.time, walk: working ? 1 : 0,
+      facing: this.playerFacing,
+      glow: "rgba(217,164,65,.5)",
     });
   }
 

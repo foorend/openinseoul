@@ -52,7 +52,7 @@ const STEPS = [
     id: "door",
     target: '.arcade-home-card[data-station="door"]',
     title: "{door} — 불러오는 자리 (직접 해봅시다)",
-    body: "마지막으로 왼쪽 {door} 카드 — 클릭하거나 키보드 3. ←→만으로 조작하는 전단지 돌리기입니다. 행인은 잡으면 매출, 진상은 잡으면 돈 안 내고 짜증만, 리뷰어는 복불복. 피크 시간대나 성수기 달엔 사람이 훨씬 많이 쏟아집니다 — 화면 위 표시를 보세요.",
+    body: "마지막으로 왼쪽 {door} 카드 — 클릭하거나 키보드 3. 방향키(↑↓←→)로 거리를 뛰어다니는 전단지 돌리기입니다. 행인은 잡으면 매출, 진상은 잡으면 돈 안 내고 짜증만, 리뷰어는 복불복. 피크 시간대나 성수기 달엔 사람이 훨씬 많이 쏟아집니다 — 화면 위 표시를 보세요.",
     action: "왼쪽 {door} 카드를 눌러 연습 시작",
     await: { selector: '.arcade-home-card[data-station="door"]', event: "click" },
     practice: "door",

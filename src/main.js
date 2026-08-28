@@ -1232,7 +1232,7 @@ function renderOperations() {
             </button>
             <button class="arcade-home-card" data-station="door" type="button">
               <span class="ah-key">3</span><span class="ah-icon" aria-hidden="true">📄</span>
-              <span class="ah-body"><b>${snapshot.stationNames?.door ?? "입구"} — 전단지 돌리기</b><span>←→ 이동만 · 행인은 잡고, 진상은 피하고</span></span>
+              <span class="ah-body"><b>${snapshot.stationNames?.door ?? "입구"} — 전단지 돌리기</b><span>방향키 ↑↓←→ · 행인은 잡고, 진상은 피하고</span></span>
             </button>
             <p class="arcade-home-note">성과는 그대로 오늘 매출·만족도에 반영됩니다. 피크 시간대·성수기 달엔 훨씬 정신없어요.</p>
           </div>
@@ -1504,10 +1504,13 @@ function showAgentPopover(found, x, y) {
 function showDilemma(dilemma) {
   const overlay = document.querySelector("#dilemma-overlay");
   if (!overlay) return;
+  // 상황 일러스트 — 진상은 진짜 진상 아줌마의 얼굴로 온다
+  const artKey = dilemma.id?.startsWith("jinsang") ? "jinsang" : dilemma.id;
   overlay.innerHTML = `
     <div class="dilemma-card enter-up">
       <span class="meta-label">돌발 상황 · 시간 정지</span>
       <h2>${dilemma.title}</h2>
+      <div class="dilemma-art"><img src="assets/art/dlm-${artKey}.webp" alt="" onerror="this.closest('.dilemma-art')?.remove()" /></div>
       <p>${dilemma.situation}</p>
       <div class="dilemma-options">
         ${dilemma.options.map((option) => `

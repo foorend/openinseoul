@@ -21,6 +21,7 @@ const FILES = {
   "mg-kitchen": "assets/art/mg-kitchen.webp",
   "mg-hall": "assets/art/mg-hall.webp",
   "mg-street": "assets/art/mg-street.webp",
+  "mg-street-top": "assets/art/mg-street-top.webp",
   table: "assets/art/prop-table.webp",
   barista: "assets/art/char-barista.webp",
   owner: "assets/art/char-owner.webp",
