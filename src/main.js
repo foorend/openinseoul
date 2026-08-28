@@ -1224,7 +1224,7 @@ function renderOperations() {
             <p class="arcade-home-lede">미니게임은 자리를 <b>클릭</b>하거나 <b>1 · 2 · 3</b> 키를 눌러야만 시작됩니다.<br />자동으로는 절대 열리지 않아요.</p>
             <button class="arcade-home-card" data-station="bar" type="button">
               <span class="ah-key">1</span><span class="ah-icon" aria-hidden="true">☕</span>
-              <span class="ah-body"><b>${snapshot.stationNames?.bar ?? "키친"} — 키친 러시</b><span>←→ 레인 이동 · 주문서의 <i>Q W E R</i>을 순서대로</span></span>
+              <span class="ah-body"><b>${snapshot.stationNames?.bar ?? "키친"} — 키친 러시</b><span>←→ 이동 · 키를 <i>꾹</i> 눌러 추출/굽기, 노란 구간에서 떼기</span></span>
             </button>
             <button class="arcade-home-card" data-station="hall" type="button">
               <span class="ah-key">2</span><span class="ah-icon" aria-hidden="true">🍽</span>

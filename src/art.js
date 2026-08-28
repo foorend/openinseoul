@@ -32,6 +32,8 @@ const FILES = {
   takeout: "assets/art/char-takeout.webp",
   seatedA: "assets/art/char-seated-a.webp",
   seatedB: "assets/art/char-seated-b.webp",
+  seatedWaveA: "assets/art/char-seated-wave-a.webp",
+  seatedWaveB: "assets/art/char-seated-wave-b.webp",
 };
 
 const images = {};

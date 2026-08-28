@@ -34,7 +34,7 @@ const STEPS = [
     id: "bar",
     target: '.arcade-home-card[data-station="bar"]',
     title: "{bar} — 만드는 자리 (직접 해봅시다)",
-    body: "미니게임은 왼쪽 카드를 클릭하거나 키보드 1을 눌러야만 시작됩니다. 지금 왼쪽 {bar} 카드를 눌러 짧은 연습을 해보세요: ←→로 머신·스티머·오븐 레인을 오가고, 주문서에 찍힌 Q W E R을 순서대로 누르면 완성입니다.",
+    body: "미니게임은 왼쪽 카드를 클릭하거나 키보드 1을 눌러야만 시작됩니다. 지금 왼쪽 {bar} 카드를 눌러 짧은 연습을 해보세요: ←→로 머신·스티머·오븐을 오가고, 주문에 찍힌 키를 꾹 눌러 추출·굽기 — 게이지가 노란 구간에 왔을 때 떼면 완성입니다. 일찍 떼면 설익고, 끝까지 누르면 탑니다.",
     action: "왼쪽 {bar} 카드를 눌러 연습 시작",
     await: { selector: '.arcade-home-card[data-station="bar"]', event: "click" },
     practice: "bar",

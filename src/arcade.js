@@ -23,6 +23,83 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.roundRect(x, y, w, h, r);
 }
 
+// ── 감정 배지 — 성공/실패 순간 캐릭터 머리 위에 뜨는 리액션 아이콘 ──
+// life: 1→0. 초반 팝(스케일 오버슛) 후 떠오르며 사라진다.
+function drawBadge(ctx, x, y, type, life, max = 0.9) {
+  const t = 1 - life / max;
+  const pop = t < 0.18 ? (t / 0.18) * 1.15 : 1 + Math.max(0, 0.15 - (t - 0.18) * 1.2);
+  const rise = t * 16;
+  const alpha = life < 0.25 ? life / 0.25 : 1;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.translate(x, y - rise);
+  ctx.scale(pop, pop);
+  // 말풍선
+  ctx.fillStyle = "#f6f0e2";
+  ctx.strokeStyle = "rgba(30, 22, 14, .75)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-17, -30, 34, 30, 9);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-5, 0);
+  ctx.lineTo(0, 8);
+  ctx.lineTo(5, 0);
+  ctx.closePath();
+  ctx.fill();
+  // 아이콘
+  const cx = 0;
+  const cy = -15;
+  if (type === "love") {
+    ctx.fillStyle = "#d94f4f";
+    ctx.beginPath();
+    ctx.arc(cx - 4.2, cy - 2.5, 4.6, Math.PI, 0);
+    ctx.arc(cx + 4.2, cy - 2.5, 4.6, Math.PI, 0);
+    ctx.lineTo(cx, cy + 8.5);
+    ctx.closePath();
+    ctx.fill();
+  } else if (type === "star") {
+    ctx.fillStyle = "#d9a441";
+    ctx.beginPath();
+    for (let k = 0; k < 8; k += 1) {
+      const r = k % 2 === 0 ? 9 : 3.8;
+      const a = -Math.PI / 2 + (k * Math.PI) / 4;
+      ctx[k === 0 ? "moveTo" : "lineTo"](cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+  } else if (type === "angry") {
+    ctx.strokeStyle = "#d94f30";
+    ctx.lineWidth = 3.2;
+    ctx.lineCap = "round";
+    for (let k = 0; k < 4; k += 1) {
+      const a = Math.PI / 4 + (k * Math.PI) / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * 3.4, cy + Math.sin(a) * 3.4);
+      ctx.lineTo(cx + Math.cos(a) * 9, cy + Math.sin(a) * 9);
+      ctx.stroke();
+    }
+  } else if (type === "sweat") {
+    ctx.fillStyle = "#5b9fd4";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 9);
+    ctx.quadraticCurveTo(cx + 7.5, cy + 2, cx, cy + 8);
+    ctx.quadraticCurveTo(cx - 7.5, cy + 2, cx, cy - 9);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,.55)";
+    ctx.beginPath();
+    ctx.ellipse(cx - 2, cy, 1.7, 2.6, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (type === "shock") {
+    ctx.fillStyle = "#2b2118";
+    ctx.font = "900 19px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("!", cx, cy + 7);
+  }
+  ctx.restore();
+}
+
 // 풍부한 캐릭터 — 그림자·다리·팔·머리·헤어·소품까지 그린다.
 function paintPerson(ctx, { x, y, scale = 1, body = "#666", hair, skin, face = null, prop = null, time = 0, walk = 0, facing = 1, glow = null }) {
   // 아트 모드 — 운영 씬과 같은 일러스트 스프라이트로 그린다
@@ -159,6 +236,8 @@ class ArcadeShell {
     this.duration = this.practice ? 10 : duration;
     this.timeLeft = this.duration;
     this.keys = { left: false, right: false, up: false, down: false, space: false };
+    this.held = { Q: false, W: false, E: false, R: false };
+    this.badges = [];
     this.floaters = [];
     this.particles = [];
     this.flash = null;
@@ -209,7 +288,7 @@ class ArcadeShell {
     else if (code === "ArrowUp") { this.keys.up = true; }
     else if (code === "ArrowDown") { this.keys.down = true; }
     else if (code === "Space") { this.keys.space = true; this.spaceTap = true; }
-    else if (["KeyQ", "KeyW", "KeyE", "KeyR"].includes(code)) { this.actionTap = code[3]; }
+    else if (["KeyQ", "KeyW", "KeyE", "KeyR"].includes(code)) { this.actionTap = code[3]; this.held[code[3]] = true; }
     else if (!["Digit1", "Digit2", "Digit3"].includes(code)) return;
     // 게임에서 쓰는 키는 매장으로 새지 않는다
     event.preventDefault();
@@ -222,6 +301,11 @@ class ArcadeShell {
     if (event.code === "ArrowUp") this.keys.up = false;
     if (event.code === "ArrowDown") this.keys.down = false;
     if (event.code === "Space") this.keys.space = false;
+    if (["KeyQ", "KeyW", "KeyE", "KeyR"].includes(event.code)) this.held[event.code[3]] = false;
+  }
+
+  addBadge(x, y, type, dur = 0.9) {
+    this.badges.push({ x, y, type, life: dur, max: dur });
   }
 
   addFloat(x, y, text, color) {
@@ -275,6 +359,8 @@ class ArcadeShell {
     this.particles = this.particles.filter((particle) => particle.life > 0);
     for (const item of this.floaters) item.life -= dt * 0.7;
     this.floaters = this.floaters.filter((item) => item.life > 0);
+    for (const badge of this.badges) badge.life -= dt;
+    this.badges = this.badges.filter((badge) => badge.life > 0);
     if (this.comboTimer > 0) { this.comboTimer -= dt; if (this.comboTimer <= 0) this.combo = 0; }
     if (this.flash) { this.flash.life -= dt; if (this.flash.life <= 0) this.flash = null; }
 
@@ -287,6 +373,7 @@ class ArcadeShell {
       ctx.fillRect(particle.x - particle.size / 2, particle.y - particle.size / 2, particle.size, particle.size);
     }
     ctx.globalAlpha = 1;
+    for (const badge of this.badges) drawBadge(ctx, badge.x, badge.y, badge.type, badge.life, badge.max);
     for (const item of this.floaters) {
       ctx.globalAlpha = Math.max(0, item.life);
       ctx.fillStyle = item.color;
@@ -401,6 +488,7 @@ export class FlyerRun extends ArcadeShell {
     this.playerX = this.W / 2;
     this.playerY = this.H * 0.62;
     this.playerFacing = 1;
+    this.playerReact = null;
     this.nextSpawn = 0;
     this.shake = 0;
   }
@@ -451,30 +539,37 @@ export class FlyerRun extends ArcadeShell {
     if (kind.id === "sure") {
       this.stats.score += 1;
       this.bumpCombo();
-      this.burst(person.x, person.y, "#8fd6ab", 10);
-      this.addFloat(person.x, person.y, "+1점 (어차피 단골)", "#8fd6ab");
+      this.burst(person.x, person.y - 40, "#8fd6ab", 10);
+      this.addBadge(person.x, person.y - 104, "love", 0.9);
+      this.addFloat(person.x, person.y - 30, "+1점 (어차피 단골)", "#8fd6ab");
       this.sounds?.click();
     } else if (kind.id === "maybe") {
       this.stats.score += 1;
       this.stats.converted += 1;
       this.bumpCombo();
       this.sim.injectWalkin("maybe");
-      this.burst(person.x, person.y, "#f0c674", 16);
-      this.addFloat(person.x, person.y, "손님 확보! +매출", "#f0c674");
+      this.burst(person.x, person.y - 40, "#f0c674", 16);
+      this.addBadge(person.x, person.y - 104, "love", 1.0);
+      this.playerReact = { type: "star", t: 0.9, max: 0.9 };
+      this.addFloat(person.x, person.y - 30, "손님 확보! +매출", "#f0c674");
       this.sounds?.good();
     } else if (kind.id === "reviewer") {
       const agent = this.sim.injectWalkin("reviewer");
       if (agent?.reviewLucky) {
         this.stats.goodReviews += 1;
         this.bumpCombo();
-        this.burst(person.x, person.y, "#b79ae0", 16);
-        this.addFloat(person.x, person.y, "호평 각! 내일 +1%", "#cdb2f0");
+        this.burst(person.x, person.y - 40, "#b79ae0", 16);
+        this.addBadge(person.x, person.y - 104, "star", 1.0);
+        this.playerReact = { type: "love", t: 0.9, max: 0.9 };
+        this.addFloat(person.x, person.y - 30, "호평 각! 내일 +1%", "#cdb2f0");
         this.sounds?.good();
       } else {
         this.stats.badReviews += 1;
         this.breakCombo();
         this.screenFlash("rgba(138,111,184,.25)");
-        this.addFloat(person.x, person.y, "혹평… 내일 −1%", "#b79ae0");
+        this.addBadge(person.x, person.y - 104, "angry", 1.0);
+        this.playerReact = { type: "sweat", t: 1.0, max: 1.0 };
+        this.addFloat(person.x, person.y - 30, "혹평… 내일 −1%", "#b79ae0");
         this.sounds?.bad();
       }
     } else {
@@ -483,7 +578,9 @@ export class FlyerRun extends ArcadeShell {
       this.sim.jinsangWalkin();
       this.screenFlash("rgba(194,90,74,.3)");
       this.shake = 0.5;
-      this.addFloat(person.x, person.y, "진상 입장… 돈은 안 냄", "#e07a6a");
+      this.addBadge(person.x, person.y - 104, "angry", 1.2);
+      this.playerReact = { type: "shock", t: 1.1, max: 1.1 };
+      this.addFloat(person.x, person.y - 30, "진상 입장… 돈은 안 냄", "#e07a6a");
       this.sounds?.bad();
     }
   }
@@ -496,6 +593,7 @@ export class FlyerRun extends ArcadeShell {
     if (this.keys.down) this.playerY += speed * dt;
     this.playerX = Math.max(36, Math.min(this.W - 36, this.playerX));
     this.playerY = Math.max(70, Math.min(this.H - 40, this.playerY));
+    if (this.playerReact) { this.playerReact.t -= dt; if (this.playerReact.t <= 0) this.playerReact = null; }
 
     this.nextSpawn -= dt;
     if (this.nextSpawn <= 0) {
@@ -573,6 +671,7 @@ export class FlyerRun extends ArcadeShell {
           facing: this.playerFacing,
           glow: "rgba(217,164,65,.6)",
         });
+        if (this.playerReact) drawBadge(ctx, this.playerX + 24, this.playerY - 134, this.playerReact.type, this.playerReact.t, this.playerReact.max);
         continue;
       }
       const person = item.person;
@@ -635,93 +734,164 @@ export class KitchenRush extends ArcadeShell {
       kicker: "KITCHEN / BREW & BAKE",
       w: 720, h: 460, duration: 28,
       legend: `
-        <span>☕ 머신</span><span>🥛 스티머</span><span>${bakes ? "🔥 오븐" : "🍰 쇼케이스"}</span>
-        <span>주문서의 <b>Q W E R</b>을 순서대로 — 완성한 잔은 진짜 손님에게</span>
-        <b>←→ 레인 · QWER 조리</b>`,
+        <span>☕ 머신</span><span>🥛 스티머</span><span>🔥 오븐</span>
+        <span>주문의 키를 <b>꾹 누르고</b>, 게이지가 <b>노란 구간</b>일 때 떼세요</span>
+        <span>일찍 떼면 설익고 · 끝까지 누르면 탑니다</span>
+        <b>←→ 스테이션 · QWER 꾹</b>`,
     });
     this.bakes = bakes;
-    this.lanes = [
-      { icon: "☕", name: "머신", x: this.W * 0.18 },
-      { icon: "🥛", name: "스티머", x: this.W * 0.5 },
-      { icon: bakes ? "🔥" : "🍰", name: bakes ? "오븐" : "쇼케이스", x: this.W * 0.82 },
-    ].map((lane) => ({ ...lane, order: null }));
+    // 스테이션 앵커 — 일러스트(mg-kitchen)의 실제 장비 위치에 커버 매핑 기준으로 부착
+    // (아트 미로드시 procedural 배경의 기존 비율 사용)
+    this.artStations = [
+      { icon: "☕", name: "머신", x: 122, topY: 208, mouthY: 292 },
+      { icon: "🥛", name: "스티머", x: 322, topY: 218, mouthY: 296 },
+      { icon: "🔥", name: "오븐", x: 505, topY: 222, mouthY: 292 },
+    ];
+    this.procStations = [
+      { icon: "☕", name: "머신", x: this.W * 0.18, topY: this.H * 0.3, mouthY: this.H * 0.5 },
+      { icon: "🥛", name: "스티머", x: this.W * 0.5, topY: this.H * 0.3, mouthY: this.H * 0.5 },
+      { icon: "🔥", name: "오븐", x: this.W * 0.82, topY: this.H * 0.3, mouthY: this.H * 0.5 },
+    ];
+    this.lanes = this.procStations.map((station) => ({ ...station, order: null }));
     this.slot = 0;
     this.stats = { made: 0, missed: 0, wrong: 0 };
     this.nextOrder = 0.3;
     this.playerFacing = 1;
+    this.playerReact = null;
     this.workPulse = 0;
-    this.ovenAnims = [];
+    this.cookFx = [];   // 완성/설익음/탄 결과물 연출
+    this.doughFx = [];  // 반죽이 오븐으로 미끄러져 들어가는 연출
+  }
+
+  // 아트 로드가 프레임 도중 끝나도 앵커가 따라가게 매 프레임 동기화
+  syncStations() {
+    const src = artReady("mg-kitchen") ? this.artStations : this.procStations;
+    for (let i = 0; i < this.lanes.length; i += 1) {
+      this.lanes[i].x = src[i].x;
+      this.lanes[i].topY = src[i].topY;
+      this.lanes[i].mouthY = src[i].mouthY;
+      this.lanes[i].name = src[i].name;
+      this.lanes[i].icon = src[i].icon;
+    }
   }
 
   spawnOrder() {
     const empty = this.lanes.map((lane, index) => ({ lane, index })).filter((item) => !item.lane.order);
     if (!empty.length) return;
-    // 내 메뉴판에서 실제로 파는 메뉴가 주문으로 들어온다
     const menus = this.sim.menus;
     const menu = menus[Math.floor(Math.random() * menus.length)];
     const laneIndex = laneFor(menu, this.bakes);
     const target = empty.find((item) => item.index === laneIndex) ?? empty[Math.floor(Math.random() * empty.length)];
-    target.lane.order = { menu, combo: comboFor(menu), step: 0, patience: 9.5, pop: 0 };
+    // 메뉴마다 홀드 키 1개 + 적정 게이지 구간 (복잡한 메뉴일수록 좁다)
+    let hash = 0;
+    for (const ch of menu.id) hash = (hash * 31 + ch.charCodeAt(0)) % 9973;
+    const width = Math.max(0.14, 0.3 - (menu.complexity ?? 1) * 0.05);
+    const z0 = 0.52 + (hash % 5) * 0.03;
+    target.lane.order = {
+      menu,
+      key: KEY_POOL[hash % 4],
+      zone: [z0, Math.min(0.95, z0 + width)],
+      gauge: 0,
+      holding: false,
+      patience: 10,
+      pop: 0,
+    };
+  }
+
+  finishCook(lane, index) {
+    const order = lane.order;
+    this.stats.made += 1;
+    this.bumpCombo();
+    this.sim.expressServe();
+    this.workPulse = 0.5;
+    this.playerReact = { type: index === 2 ? "love" : "star", t: 0.9, max: 0.9 };
+    this.cookFx.push({ type: "done", lane: index, t: 0, menu: order.menu });
+    this.burst(lane.x, lane.mouthY - 20, "#8fd6ab", 16, 140);
+    this.addFloat(lane.x, lane.topY - 78, `${order.menu.name} 완성!`, "#8fd6ab");
+    this.sounds?.good();
+    lane.order = null;
+  }
+
+  failCook(lane, index, kind) {
+    const order = lane.order;
+    this.stats.wrong += 1;
+    this.breakCombo();
+    this.playerReact = { type: kind === "burnt" ? "shock" : "sweat", t: 1.0, max: 1.0 };
+    this.cookFx.push({ type: kind, lane: index, t: 0, menu: order.menu });
+    if (kind === "burnt") {
+      this.screenFlash("rgba(120, 60, 30, .3)");
+      this.addFloat(lane.x, lane.topY - 78, `타버렸다… 다시!`, "#e07a6a");
+    } else {
+      this.addFloat(lane.x, lane.topY - 78, `설익었다… 다시!`, "#e0b06a");
+    }
+    this.sounds?.bad();
+    order.patience -= 1.6;
+    order.gauge = 0;
+    order.holding = false;
   }
 
   update(dt) {
+    this.syncStations();
     if (this.leftTap) { this.slot = Math.max(0, this.slot - 1); this.playerFacing = -1; }
     if (this.rightTap) { this.slot = Math.min(this.lanes.length - 1, this.slot + 1); this.playerFacing = 1; }
     if (this.workPulse > 0) this.workPulse -= dt;
-    for (const anim of this.ovenAnims) anim.t += dt;
-    this.ovenAnims = this.ovenAnims.filter((anim) => anim.t < 0.85);
+    if (this.playerReact) { this.playerReact.t -= dt; if (this.playerReact.t <= 0) this.playerReact = null; }
+    for (const fx of this.cookFx) fx.t += dt;
+    this.cookFx = this.cookFx.filter((fx) => fx.t < 1.1);
+    for (const fx of this.doughFx) fx.t += dt;
+    this.doughFx = this.doughFx.filter((fx) => fx.t < 0.55);
 
     this.nextOrder -= dt;
     if (this.nextOrder <= 0) {
       this.spawnOrder();
       const queue = this.sim.activeAgents.filter((agent) => agent.state === "queueing").length;
-      // 실제 대기줄 + 붐비는 시간대가 주문 유입 속도를 정한다
       this.nextOrder = Math.max(0.7, (2.0 - queue * 0.12) / Math.max(0.6, this.crowd.factor));
     }
 
-    // QWER 입력 — 서 있는 레인의 주문 콤보를 순서대로
+    // 현재 스테이션 — 주문 키를 꾹 누르는 동안 게이지가 찬다
     const lane = this.lanes[this.slot];
-    if (this.actionTap && lane.order) {
-      const expected = lane.order.combo[lane.order.step];
-      if (this.actionTap === expected) {
-        lane.order.step += 1;
-        lane.order.pop = 0.25;
-        this.workPulse = 0.35; // 사장이 손을 놀린다
-        this.burst(lane.x, this.H * 0.4, "#f0c674", 6, 90);
-        this.sounds?.click();
-        if (lane.order.step >= lane.order.combo.length) {
-          this.stats.made += 1;
-          this.bumpCombo();
-          this.sim.expressServe();
-          this.burst(lane.x, this.H * 0.42, "#8fd6ab", 18, 150);
-          this.addFloat(lane.x, this.H * 0.36, `${lane.order.menu.name} 완성!`, "#8fd6ab");
-          // 베이커리 메뉴는 반죽을 오븐에 넣는 모션으로 마무리
-          if (lane.order.menu.caseItem) {
-            this.ovenAnims.push({ t: 0, fromX: lane.x, fromY: this.H * 0.72, toX: this.lanes[2].x + 26, toY: this.H * 0.4 });
-            this.workPulse = 0.6;
-          }
-          this.sounds?.good();
-          lane.order = null;
+    const order = lane.order;
+    if (order) {
+      const heldNow = this.held[order.key];
+      if (heldNow) {
+        if (!order.holding) {
+          order.holding = true;
+          order.pop = 0.25;
+          this.workPulse = 0.4;
+          // 오븐이면 반죽이 미끄러져 들어간다
+          if (this.slot === 2) this.doughFx.push({ t: 0, x0: lane.x - 66, y0: lane.mouthY + 26, x1: lane.x + 4, y1: lane.mouthY - 4 });
+          this.sounds?.click();
         }
-      } else {
-        this.stats.wrong += 1;
-        this.breakCombo();
-        lane.order.patience -= 0.8;
-        this.addFloat(lane.x, this.H * 0.48, "삑! 순서가 달라요", "#e07a6a");
-        this.sounds?.bad();
+        this.workPulse = Math.max(this.workPulse, 0.15);
+        order.gauge = Math.min(1, order.gauge + dt / 1.7);
+        if (order.gauge >= 1) this.failCook(lane, this.slot, "burnt");
+      } else if (order.holding) {
+        // 뗐다 — 게이지 판정
+        if (order.gauge >= order.zone[0] && order.gauge <= order.zone[1]) this.finishCook(lane, this.slot);
+        else if (order.gauge > 0.1) this.failCook(lane, this.slot, "raw");
+        else { order.holding = false; order.gauge = 0; }
+      } else if (this.actionTap && this.actionTap !== order.key) {
+        this.addFloat(lane.x, lane.topY - 78, `이 주문은 [${order.key}]`, "#9c8b7c");
       }
-    } else if (this.actionTap && !lane.order) {
-      this.addFloat(lane.x, this.H * 0.48, "이 레인엔 주문이 없어요", "#9c8b7c");
+    } else if (this.actionTap) {
+      this.addFloat(lane.x, lane.topY - 78, "이 스테이션엔 주문이 없어요", "#9c8b7c");
+    }
+    // 다른 스테이션으로 옮기면 홀드는 취소 (조리 중이던 건 리셋)
+    for (let i = 0; i < this.lanes.length; i += 1) {
+      const other = this.lanes[i].order;
+      if (i !== this.slot && other?.holding) { other.holding = false; other.gauge = 0; }
     }
 
-    for (const item of this.lanes) {
+    for (let i = 0; i < this.lanes.length; i += 1) {
+      const item = this.lanes[i];
       if (!item.order) continue;
       item.order.patience -= dt;
       if (item.order.pop > 0) item.order.pop -= dt;
       if (item.order.patience <= 0) {
         this.stats.missed += 1;
         this.breakCombo();
-        this.addFloat(item.x, this.H * 0.4, `${item.order.menu.name} 식었다…`, "#e07a6a");
+        this.playerReact = { type: "sweat", t: 0.9, max: 0.9 };
+        this.addFloat(item.x, item.topY - 78, `${item.order.menu.name} 식었다…`, "#e07a6a");
         this.sounds?.bad();
         item.order = null;
       }
@@ -729,12 +899,11 @@ export class KitchenRush extends ArcadeShell {
   }
 
   render(ctx) {
+    this.syncStations();
     const artMode = artReady("mg-kitchen");
     if (artMode) {
-      // 아트 모드 — 일러스트 주방 (스테이션은 그림이 담당)
       coverDraw(ctx, "mg-kitchen", this.W, this.H);
     } else {
-      // 주방 배경 — 타일 벽과 조리대
       const bg = ctx.createLinearGradient(0, 0, 0, this.H);
       bg.addColorStop(0, "#2a2019");
       bg.addColorStop(1, "#1c150f");
@@ -744,145 +913,273 @@ export class KitchenRush extends ArcadeShell {
       ctx.lineWidth = 1;
       for (let x = 0; x < this.W; x += 42) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.H * 0.34); ctx.stroke(); }
       for (let y = 0; y < this.H * 0.34; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.W, y); ctx.stroke(); }
-      ctx.fillStyle = "#4a3524";
-      ctx.fillRect(30, 46, this.W - 60, 10);
-      for (let i = 0; i < 8; i += 1) {
-        ctx.fillStyle = ["#efe6d8", "#d9a441", "#8fae9b", "#c9a284"][i % 4];
-        roundRect(ctx, 60 + i * (this.W - 140) / 7, 28, 16, 18, 3);
-        ctx.fill();
-      }
       ctx.fillStyle = "#5a3c2b";
       ctx.fillRect(0, this.H * 0.52, this.W, 30);
       ctx.fillStyle = "#41291d";
       ctx.fillRect(0, this.H * 0.52 + 30, this.W, this.H);
     }
 
+    // 반죽 슬라이드 인 (오븐)
+    for (const fx of this.doughFx) {
+      const progress = Math.min(1, fx.t / 0.5);
+      const dx = fx.x0 + (fx.x1 - fx.x0) * progress;
+      const dy = fx.y0 + (fx.y1 - fx.y0) * progress - Math.sin(progress * Math.PI) * 18;
+      ctx.save();
+      ctx.fillStyle = "#e8c98a";
+      ctx.strokeStyle = "#a97b3f";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(dx, dy, 11, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
     for (let i = 0; i < this.lanes.length; i += 1) {
       const lane = this.lanes[i];
       const active = i === this.slot;
+      const order = lane.order;
+
       if (!artMode) {
-        // 장비 유닛
         ctx.fillStyle = active ? "#463527" : "#332619";
-        roundRect(ctx, lane.x - 64, this.H * 0.3, 128, this.H * 0.22, 8);
+        roundRect(ctx, lane.x - 64, lane.topY, 128, lane.mouthY - lane.topY + 40, 8);
         ctx.fill();
         ctx.font = "44px serif";
         ctx.textAlign = "center";
-        ctx.fillText(lane.icon, lane.x, this.H * 0.47);
+        ctx.fillText(lane.icon, lane.x, (lane.topY + lane.mouthY) / 2 + 20);
       }
+
+      // 활성 스테이션 — 장비에 정확히 붙는 프레임 + 스포트라이트
       if (active) {
-        // 활성 스테이션 — 바닥 스포트라이트 + 프레임
         ctx.save();
-        ctx.strokeStyle = "rgba(240,198,116,.85)";
+        ctx.strokeStyle = "rgba(240,198,116,.9)";
         ctx.lineWidth = 2.6;
-        roundRect(ctx, lane.x - 70, this.H * 0.28, 140, this.H * 0.26, 10);
+        roundRect(ctx, lane.x - 70, lane.topY - 4, 140, lane.mouthY - lane.topY + 52, 10);
         ctx.stroke();
         if (artMode) {
-          const spot = ctx.createRadialGradient(lane.x, this.H * 0.42, 10, lane.x, this.H * 0.42, 120);
-          spot.addColorStop(0, "rgba(240,198,116,.22)");
+          const spot = ctx.createRadialGradient(lane.x, (lane.topY + lane.mouthY) / 2, 10, lane.x, (lane.topY + lane.mouthY) / 2, 130);
+          spot.addColorStop(0, "rgba(240,198,116,.18)");
           spot.addColorStop(1, "transparent");
           ctx.globalCompositeOperation = "screen";
           ctx.fillStyle = spot;
-          ctx.fillRect(lane.x - 130, this.H * 0.2, 260, this.H * 0.4);
+          ctx.fillRect(lane.x - 130, lane.topY - 40, 260, lane.mouthY - lane.topY + 170);
         }
         ctx.restore();
       }
       ctx.font = "700 13px 'NeoDunggeunmo', sans-serif";
       ctx.textAlign = "center";
       ctx.fillStyle = active ? "#ffd98a" : "rgba(240,230,214,.8)";
-      ctx.fillText(lane.name, lane.x, this.H * 0.585);
+      ctx.fillText(lane.name, lane.x, lane.mouthY + 62);
 
-      // 주문 티켓 — 실제 메뉴 이름 + QWER 콤보
-      if (lane.order) {
-        const { menu, combo, step, patience, pop } = lane.order;
-        const ticketY = this.H * 0.08;
-        const scalePop = 1 + Math.max(0, pop) * 0.5;
+      // 주문 카드 — 장비 바로 위에 부착
+      if (order) {
+        const cardY = lane.topY - 66;
+        const scalePop = 1 + Math.max(0, order.pop) * 0.4;
         ctx.save();
-        ctx.translate(lane.x, ticketY + 30);
+        ctx.translate(lane.x, cardY + 22);
         ctx.scale(scalePop, scalePop);
-        ctx.translate(-lane.x, -(ticketY + 30));
+        ctx.translate(-lane.x, -(cardY + 22));
         ctx.fillStyle = "#f4ecdc";
-        ctx.strokeStyle = "rgba(20,14,8,.5)";
+        ctx.strokeStyle = "rgba(20,14,8,.55)";
         ctx.lineWidth = 2;
-        roundRect(ctx, lane.x - 74, ticketY, 148, 62, 6);
+        roundRect(ctx, lane.x - 66, cardY, 132, 46, 6);
         ctx.fill();
         ctx.stroke();
+        // 카드 → 장비 연결선
+        ctx.strokeStyle = "rgba(20,14,8,.35)";
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.moveTo(lane.x, cardY + 46);
+        ctx.lineTo(lane.x, lane.topY - 16);
+        ctx.stroke();
+        ctx.setLineDash([]);
         ctx.fillStyle = "#3c3226";
-        ctx.font = "700 13px 'NeoDunggeunmo', sans-serif";
-        ctx.fillText(`${menu.icon} ${menu.name}`, lane.x, ticketY + 20);
-        // 콤보 키
-        const keyWidth = 26;
-        const startX = lane.x - ((combo.length - 1) * (keyWidth + 6)) / 2;
-        for (let k = 0; k < combo.length; k += 1) {
-          const done = k < step;
-          const current = k === step;
-          ctx.fillStyle = done ? "#5fa57c" : current ? "#d9a441" : "#c9beac";
-          roundRect(ctx, startX + k * (keyWidth + 6) - keyWidth / 2, ticketY + 28, keyWidth, 24, 4);
-          ctx.fill();
-          if (current) {
-            ctx.strokeStyle = "#8a5f1e";
-            ctx.lineWidth = 2;
-            roundRect(ctx, startX + k * (keyWidth + 6) - keyWidth / 2, ticketY + 28, keyWidth, 24, 4);
-            ctx.stroke();
-          }
-          ctx.fillStyle = done ? "#eafff2" : "#2c2418";
-          ctx.font = "800 14px 'NeoDunggeunmo', monospace";
-          ctx.fillText(combo[k], startX + k * (keyWidth + 6), ticketY + 45);
-        }
-        // 인내 게이지
-        ctx.fillStyle = "#171310";
-        ctx.fillRect(lane.x - 64, ticketY + 68, 128, 7);
-        ctx.fillStyle = patience < 3.2 ? "#c25a4a" : "#5fa57c";
-        ctx.fillRect(lane.x - 64, ticketY + 68, 128 * Math.max(0, patience / 9.5), 7);
+        ctx.font = "700 12.5px 'NeoDunggeunmo', sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(`${order.menu.icon} ${order.menu.name}`, lane.x - 58, cardY + 19);
+        // 홀드 키 캡
+        const keyHeld = order.holding;
+        ctx.fillStyle = keyHeld ? "#5fa57c" : "#d9a441";
+        roundRect(ctx, lane.x - 58, cardY + 25, 24, 17, 4);
+        ctx.fill();
+        ctx.fillStyle = keyHeld ? "#eafff2" : "#2c2418";
+        ctx.font = "800 12px 'NeoDunggeunmo', monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(order.key, lane.x - 46, cardY + 38);
+        ctx.fillStyle = "#8a7860";
+        ctx.font = "700 10px 'NeoDunggeunmo', sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(keyHeld ? "굽는 중…" : "꾹 누르기", lane.x - 28, cardY + 38);
+        // 인내 게이지 (카드 하단 얇게)
+        ctx.fillStyle = "#d8cbb2";
+        ctx.fillRect(lane.x - 66, cardY + 44, 132, 3);
+        ctx.fillStyle = order.patience < 3.5 ? "#c25a4a" : "#8a6d4a";
+        ctx.fillRect(lane.x - 66, cardY + 44, 132 * Math.max(0, order.patience / 10), 3);
         ctx.restore();
-        // 김 (스팀)
-        if (step > 0) {
-          ctx.strokeStyle = "rgba(240,230,214,.35)";
-          ctx.lineWidth = 2;
-          for (let sIdx = -1; sIdx <= 1; sIdx += 1) {
+
+        // ── 홀드 게이지 — 장비 아래, 노란 적정 구간 표시 ──
+        const gx = lane.x - 58;
+        const gy = lane.mouthY + 34;
+        const gw = 116;
+        ctx.fillStyle = "rgba(18, 13, 9, .8)";
+        roundRect(ctx, gx - 3, gy - 3, gw + 6, 16, 5);
+        ctx.fill();
+        // 적정 구간 (노란 밴드)
+        ctx.fillStyle = "rgba(217, 164, 65, .45)";
+        ctx.fillRect(gx + gw * order.zone[0], gy, gw * (order.zone[1] - order.zone[0]), 10);
+        ctx.strokeStyle = "rgba(240, 198, 116, .95)";
+        ctx.lineWidth = 1.6;
+        ctx.strokeRect(gx + gw * order.zone[0], gy - 1, gw * (order.zone[1] - order.zone[0]), 12);
+        // 채워지는 게이지
+        if (order.gauge > 0) {
+          const inZone = order.gauge >= order.zone[0] && order.gauge <= order.zone[1];
+          const over = order.gauge > order.zone[1];
+          ctx.fillStyle = over ? "#c8502e" : inZone ? "#e9b64d" : "#c9b18a";
+          ctx.fillRect(gx, gy, gw * order.gauge, 10);
+          // 바늘
+          ctx.fillStyle = "#fff4dc";
+          ctx.fillRect(gx + gw * order.gauge - 1.5, gy - 4, 3, 18);
+          if (inZone) {
+            ctx.save();
+            ctx.globalCompositeOperation = "screen";
+            const pulse = ctx.createRadialGradient(gx + gw * order.gauge, gy + 5, 2, gx + gw * order.gauge, gy + 5, 26);
+            pulse.addColorStop(0, "rgba(255, 220, 140, .8)");
+            pulse.addColorStop(1, "transparent");
+            ctx.fillStyle = pulse;
+            ctx.fillRect(gx + gw * order.gauge - 26, gy - 21, 52, 52);
+            ctx.restore();
+          }
+        }
+
+        // ── 조리 중 라이브 연출 ──
+        if (order.holding) {
+          if (i === 0) {
+            // 에스프레소 추출 줄기 + 잔
+            const streamX = lane.x + Math.sin(this.time * 14) * 0.8;
+            ctx.strokeStyle = "#6d4324";
+            ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.moveTo(lane.x + sIdx * 10, this.H * 0.33);
-            ctx.quadraticCurveTo(lane.x + sIdx * 10 + Math.sin(this.time * 3 + sIdx) * 6, this.H * 0.27, lane.x + sIdx * 10, this.H * 0.22);
+            ctx.moveTo(streamX, lane.mouthY - 24);
+            ctx.lineTo(streamX, lane.mouthY + 2);
             ctx.stroke();
+            ctx.fillStyle = "#f2ead8";
+            roundRect(ctx, lane.x - 10, lane.mouthY + 2, 20, 14, 3);
+            ctx.fill();
+            ctx.fillStyle = "#8a5326";
+            ctx.fillRect(lane.x - 8, lane.mouthY + 4, 16, 4 + order.gauge * 7);
+          } else if (i === 1) {
+            // 스팀 소용돌이
+            for (let k = 0; k < 3; k += 1) {
+              const sp = (this.time * 1.4 + k * 0.33) % 1;
+              ctx.globalAlpha = (1 - sp) * 0.5;
+              ctx.fillStyle = "#fff";
+              ctx.beginPath();
+              ctx.arc(lane.x - 8 + Math.sin(sp * 7 + k) * 8, lane.mouthY - 10 - sp * 44, 3.5 + sp * 6, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+          } else {
+            // 오븐 내부 글로우 — 게이지만큼 달아오른다
+            ctx.save();
+            ctx.globalCompositeOperation = "screen";
+            const heat = ctx.createRadialGradient(lane.x, (lane.topY + lane.mouthY) / 2 + 8, 4, lane.x, (lane.topY + lane.mouthY) / 2 + 8, 60);
+            heat.addColorStop(0, `rgba(255, ${170 - order.gauge * 80}, 60, ${0.25 + order.gauge * 0.5})`);
+            heat.addColorStop(1, "transparent");
+            ctx.fillStyle = heat;
+            ctx.fillRect(lane.x - 60, lane.topY - 20, 120, lane.mouthY - lane.topY + 80);
+            ctx.restore();
           }
         }
       }
     }
-    // 반죽 → 오븐 궤적 (베이커리 완성 모션)
-    for (const anim of this.ovenAnims) {
-      const progress = Math.min(1, anim.t / 0.8);
-      const ax = anim.fromX + (anim.toX - anim.fromX) * progress;
-      const arc = Math.sin(progress * Math.PI) * 90;
-      const ay = anim.fromY + (anim.toY - anim.fromY) * progress - arc;
+
+    // ── 결과물 연출 — 완성은 꺼내 올리고, 실패작은 처량하게 ──
+    for (const fx of this.cookFx) {
+      const lane = this.lanes[fx.lane];
+      const progress = Math.min(1, fx.t / 1.0);
+      const rise = Math.sin(Math.min(1, progress * 1.4) * Math.PI * 0.5) * 42;
+      const ix2 = lane.x + 18;
+      const iy2 = lane.mouthY - 6 - rise;
       ctx.save();
-      ctx.fillStyle = "#e8c98a";
-      ctx.strokeStyle = "#a97b3f";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.ellipse(ax, ay, 11, 9, progress * 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      if (progress > 0.92) {
-        // 오븐 글로우 플래시
-        const ovenGlow = ctx.createRadialGradient(anim.toX, anim.toY, 4, anim.toX, anim.toY, 70);
-        ovenGlow.addColorStop(0, "rgba(255, 170, 80, .55)");
-        ovenGlow.addColorStop(1, "transparent");
-        ctx.globalCompositeOperation = "screen";
-        ctx.fillStyle = ovenGlow;
-        ctx.fillRect(anim.toX - 70, anim.toY - 70, 140, 140);
+      if (fx.type === "done") {
+        if (fx.lane === 2 || fx.menu.caseItem) {
+          // 갓 구운 빵
+          ctx.fillStyle = "#d9973f";
+          ctx.strokeStyle = "#9c6224";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(ix2, iy2, 14, 10, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.strokeStyle = "rgba(120, 70, 24, .8)";
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.moveTo(ix2 - 7, iy2 - 2);
+          ctx.quadraticCurveTo(ix2, iy2 - 7, ix2 + 7, iy2 - 2);
+          ctx.stroke();
+        } else {
+          // 완성된 잔
+          ctx.fillStyle = "#f2ead8";
+          roundRect(ctx, ix2 - 10, iy2 - 8, 20, 16, 3);
+          ctx.fill();
+          ctx.fillStyle = "#e9b64d";
+          ctx.fillRect(ix2 - 8, iy2 - 6, 16, 4);
+        }
+        // 김
+        ctx.globalAlpha = 1 - progress;
+        ctx.strokeStyle = "rgba(255,255,255,.7)";
+        ctx.lineWidth = 2;
+        for (let k = -1; k <= 1; k += 1) {
+          ctx.beginPath();
+          ctx.moveTo(ix2 + k * 7, iy2 - 12);
+          ctx.quadraticCurveTo(ix2 + k * 7 + Math.sin(this.time * 4 + k) * 4, iy2 - 22, ix2 + k * 7, iy2 - 30);
+          ctx.stroke();
+        }
+      } else if (fx.type === "burnt") {
+        // 탄 결과물 + 연기
+        ctx.fillStyle = "#3a2c22";
+        ctx.strokeStyle = "#1e1610";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(ix2, lane.mouthY - 4, 13, 9, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        for (let k = 0; k < 3; k += 1) {
+          const sp = Math.min(1, (fx.t * 1.4 + k * 0.2) % 1);
+          ctx.globalAlpha = (1 - sp) * 0.55;
+          ctx.fillStyle = "#5a544c";
+          ctx.beginPath();
+          ctx.arc(ix2 + Math.sin(sp * 5 + k * 2) * 7, lane.mouthY - 14 - sp * 40, 4 + sp * 7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // 설익은 결과물 (창백)
+        ctx.globalAlpha = 1 - progress * 0.6;
+        ctx.fillStyle = "#e9ddc4";
+        ctx.strokeStyle = "#b8a888";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(ix2, lane.mouthY - 4 - rise * 0.3, 13, 9, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       }
       ctx.restore();
     }
 
-    // 사장 — 셰프 모드: 이동 방향을 보고, 조리 중엔 몸을 쓴다
+    // 사장 — 이동 방향을 보고, 홀드 중엔 장비에 몸을 기울인다
+    const holdingNow = !!this.lanes[this.slot].order?.holding;
+    const px = this.lanes[this.slot].x;
+    const py = this.H * 0.76;
     paintPerson(ctx, {
-      x: this.lanes[this.slot].x, y: this.H * 0.76, scale: 1.25,
+      x: px, y: py, scale: 1.25,
       body: this.sim.ownerLook?.color ?? "#23241f",
       hair: this.sim.ownerLook?.hair, face: "🧑‍🍳", prop: "🥄",
-      time: this.time * (this.workPulse > 0 ? 2.2 : 1),
-      walk: this.workPulse > 0 ? 1 : 0,
+      time: this.time * (holdingNow || this.workPulse > 0 ? 2.2 : 1),
+      walk: holdingNow || this.workPulse > 0 ? 1 : 0,
       facing: this.playerFacing,
       glow: "rgba(217,164,65,.5)",
     });
+    if (this.playerReact) drawBadge(ctx, px + 26, py - 150, this.playerReact.type, this.playerReact.t, this.playerReact.max);
   }
 
   hudText() { return `${this.stats.made}개 완성 · ${this.stats.missed} 놓침`; }
@@ -891,7 +1188,7 @@ export class KitchenRush extends ArcadeShell {
     return [
       { label: "직접 만든 메뉴", value: `${this.stats.made}개 — 대기 손님이 바로 받았습니다` },
       ...(this.stats.missed ? [{ label: "식어버린 주문", value: `${this.stats.missed}개`, bad: true }] : []),
-      ...(this.stats.wrong ? [{ label: "조리 실수", value: `${this.stats.wrong}번`, bad: true }] : []),
+      ...(this.stats.wrong ? [{ label: "설익거나 탄 조리", value: `${this.stats.wrong}번`, bad: true }] : []),
     ];
   }
 }
@@ -931,6 +1228,7 @@ export class HallService extends ArcadeShell {
     this.stats = { handled: 0, missed: 0 };
     this.nextTask = 0.4;
     this.playerFacing = -1;
+    this.playerReact = null;
   }
 
   spawnTask() {
@@ -959,10 +1257,12 @@ export class HallService extends ArcadeShell {
     // 손님이 폴짝 뛰며 인사한다
     if (table.guest) {
       table.react = { type: "happy", t: 1.1, max: 1.1 };
-      this.addFloat(table.x - 46, this.H * 0.5, "감사합니다~", "#ffd98a");
+      this.addBadge(table.x - 50, this.H * 0.665 - 100, "love", 1.0);
+      this.addFloat(table.x - 46, this.H * 0.44, "감사합니다~", "#ffd98a");
     } else {
       this.addFloat(table.x, this.H * 0.4, `${table.task.kind.label} 완료!`, "#8fd6ab");
     }
+    this.playerReact = { type: "star", t: 0.9, max: 0.9 };
     this.sounds?.good();
     table.task = null;
     table.agentId = null;
@@ -994,7 +1294,11 @@ export class HallService extends ArcadeShell {
       } else if (!task.keyDone) {
         this.breakCombo();
         task.patience -= 0.6;
-        if (table.guest) table.react = { type: "angry", t: 0.7, max: 0.7 };
+        if (table.guest) {
+          table.react = { type: "angry", t: 0.7, max: 0.7 };
+          this.addBadge(table.x - 50, this.H * 0.665 - 100, "angry", 0.8);
+        }
+        this.playerReact = { type: "sweat", t: 0.8, max: 0.8 };
         this.addFloat(table.x, this.H * 0.5, `삑! [${task.kind.key}]를 눌러야죠`, "#e07a6a");
         this.sounds?.bad();
       }
@@ -1018,6 +1322,7 @@ export class HallService extends ArcadeShell {
       this.addFloat(table.x, this.H * 0.5, "이 테이블은 괜찮아요", "#9c8b7c");
     }
 
+    if (this.playerReact) { this.playerReact.t -= dt; if (this.playerReact.t <= 0) this.playerReact = null; }
     for (const item of this.tables) {
       if (item.react) {
         item.react.t -= dt;
@@ -1029,7 +1334,11 @@ export class HallService extends ArcadeShell {
       if (item.task.patience <= 0) {
         this.stats.missed += 1;
         this.breakCombo();
-        if (item.guest) item.react = { type: "angry", t: 1.6, max: 1.6 };
+        if (item.guest) {
+          item.react = { type: "angry", t: 1.6, max: 1.6 };
+          this.addBadge(item.x - 50, this.H * 0.665 - 100, "angry", 1.1);
+        }
+        this.playerReact = { type: "sweat", t: 1.0, max: 1.0 };
         this.addFloat(item.x, this.H * 0.44, "늦었다…", "#e07a6a");
         this.sounds?.bad();
         item.task = null;
@@ -1100,52 +1409,12 @@ export class HallService extends ArcadeShell {
         const gx = table.x - 50 + shakeX;
         const gy = this.H * 0.665 + jumpY;
         const seatedKey = i % 2 === 0 ? "seatedA" : "seatedB";
+        const waveKey = i % 2 === 0 ? "seatedWaveA" : "seatedWaveB";
         if (artMode && artReady(seatedKey)) {
-          drawFigure(ctx, seatedKey, gx, gy, { h: 92, facing: 1, time: this.time });
-          const headY = gy - 96;
-          if (calling) {
-            // 손을 흔들어 부른다
-            const wave = Math.sin(this.time * 10) * 4;
-            ctx.save();
-            ctx.strokeStyle = table.guestSkin ?? "#f0c39a";
-            ctx.lineWidth = 4.4;
-            ctx.lineCap = "round";
-            ctx.beginPath();
-            ctx.moveTo(gx + 12, headY + 26);
-            ctx.lineTo(gx + 22 + wave * 0.4, headY + 6 + wave);
-            ctx.stroke();
-            ctx.fillStyle = table.guestSkin ?? "#f0c39a";
-            ctx.beginPath();
-            ctx.arc(gx + 23 + wave * 0.4, headY + 3 + wave, 5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-          }
-          if (react?.type === "angry") {
-            // 붉은 짜증 스파크
-            ctx.save();
-            ctx.strokeStyle = "#e05a3a";
-            ctx.lineWidth = 3;
-            ctx.lineCap = "round";
-            const ax = gx + 20;
-            const ay = headY - 2;
-            for (let k = 0; k < 3; k += 1) {
-              const angle = -0.9 + k * 0.7;
-              ctx.beginPath();
-              ctx.moveTo(ax + Math.cos(angle) * 4, ay + Math.sin(angle) * 4);
-              ctx.lineTo(ax + Math.cos(angle) * 12, ay + Math.sin(angle) * 12);
-              ctx.stroke();
-            }
-            ctx.restore();
-          }
-          if (react?.type === "happy" && react.t > react.max * 0.4) {
-            // 하트
-            ctx.save();
-            ctx.fillStyle = "rgba(240, 130, 130, .9)";
-            ctx.font = "800 15px Arial";
-            ctx.textAlign = "center";
-            ctx.fillText("♥", gx + 16, headY - 8 - (1 - react.t / react.max) * 18);
-            ctx.restore();
-          }
+          // 부를 땐 같은 그림체의 '손 든' 스프라이트로 교체 + 리듬감 있는 바운스
+          const useWave = calling && artReady(waveKey);
+          const waveBob = useWave ? Math.sin(this.time * 8) * 2.5 : 0;
+          drawFigure(ctx, useWave ? waveKey : seatedKey, gx, gy + waveBob, { h: 92, facing: 1, time: this.time });
         } else {
           paintPerson(ctx, {
             x: table.x - 46, y: this.H * 0.62 + jumpY, scale: 0.9,
@@ -1245,14 +1514,17 @@ export class HallService extends ArcadeShell {
     }
     // 사장 — 이동한 방향, 주문 받을 땐 손님 쪽을 본다
     const working = !!this.tables[this.slot].task;
+    const hpx = this.tables[this.slot].x;
+    const hpy = this.H * 0.85;
     paintPerson(ctx, {
-      x: this.tables[this.slot].x, y: this.H * 0.85, scale: 1.22,
+      x: hpx, y: hpy, scale: 1.22,
       body: this.sim.ownerLook?.color ?? "#23241f",
       hair: this.sim.ownerLook?.hair, face: "🙂", prop: "🫙",
       time: this.time, walk: working ? 1 : 0,
       facing: this.playerFacing,
       glow: "rgba(217,164,65,.5)",
     });
+    if (this.playerReact) drawBadge(ctx, hpx + 26, hpy - 146, this.playerReact.type, this.playerReact.t, this.playerReact.max);
   }
 
   hudText() { return `${this.stats.handled}건 처리 · ${this.stats.missed} 놓침`; }
