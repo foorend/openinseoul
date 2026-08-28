@@ -277,9 +277,9 @@ function renderLanding() {
         <canvas class="hero-city-canvas" id="hero-canvas"></canvas>
         <div class="hero-sticker">ONE<br />MORE<br />SHIFT</div>
         <div class="hero-budget">
-          <span class="meta-label">현실적인 자본 게임 속</span>
-          <strong>힐링할 수 있는 미니게임</strong>
-          <span class="meta-label">키친에서 작업 · 홀에서 서빙 · 문 앞에서 전단지 돌리기</span>
+          <span class="meta-label">수천만 원을 쓰기 전에,</span>
+          <strong>먼저 15분만 투자해서<br />카페 한 번 운영해보세요.</strong>
+          <span class="meta-label">매출보다 중요한 ‘사장 시급’까지 계산합니다.</span>
         </div>
       </div>
     </section>
