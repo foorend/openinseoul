@@ -1,5 +1,8 @@
 import { clamp, phaseAt } from "./sim.js";
 import { figure, glowDot, grain, lightCone, vignette } from "./visuals.js";
+import { loadArt, artReady, drawBackplate, drawFigure, figureKeyFor, drawTableProp, coverDraw, ANCHOR } from "./art.js";
+
+loadArt();
 
 const W = 1200;
 const H = 900;
@@ -95,6 +98,30 @@ const HAIR_TONES = ["#241f1c", "#3a2e24", "#4a3a2a", "#1c1c22"];
 
 function drawCharacter(ctx, agent, x, y, options = {}) {
   const { scale = 1, walking = 0, seated = false, time = 0 } = options;
+  // 아트 모드 — 일러스트 스프라이트가 로드돼 있으면 벡터 대신 스프라이트를 그린다
+  const spriteKey = figureKeyFor(agent, { seated });
+  if (artReady(spriteKey) && artReady("bg")) {
+    const rk = agent.randomKey ?? 0;
+    const spriteFacing = options.facing ?? agent.facing ?? 1;
+    const bob = walking ? Math.sin(time * 9 + rk) * 2 : Math.sin(time * 2 + rk) * 0.7;
+    if (agent.customer?.id === "owner") {
+      const pulse = 0.5 + 0.5 * Math.sin(time * 3);
+      ctx.save();
+      ctx.strokeStyle = `rgba(217, 164, 65, ${0.4 + pulse * 0.32})`;
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.ellipse(x, y + 3, 18 + pulse * 2, 6 + pulse, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    drawFigure(ctx, spriteKey, x, y + bob, {
+      h: (seated ? 150 : 200) * scale,
+      facing: spriteFacing,
+      walking,
+      time: time + rk,
+    });
+    return;
+  }
   const key = agent.randomKey ?? 0;
   const skin = SKIN_TONES[key % SKIN_TONES.length];
   const hair = options.hair ?? HAIR_TONES[(key + 1) % HAIR_TONES.length];
@@ -375,6 +402,24 @@ export class HeroScene {
     const ctx = fitCanvas(this.canvas);
     ctx.clearRect(0, 0, W, H);
 
+    // 아트 모드 — 마스터 컨셉 아트로 켄번즈 히어로
+    if (artReady("master")) {
+      const zoom = 1.06 + Math.sin(time * 0.07) * 0.02;
+      coverDraw(ctx, "master", W, H, { zoom, panX: 0.5 + Math.sin(time * 0.045) * 0.05, panY: 0.42 });
+      // 은은한 컬러 그레이드 + 비네팅
+      ctx.save();
+      ctx.globalCompositeOperation = "overlay";
+      const grade = ctx.createLinearGradient(0, 0, 0, H);
+      grade.addColorStop(0, "rgba(60, 80, 130, 0.16)");
+      grade.addColorStop(1, "rgba(190, 120, 60, 0.14)");
+      ctx.fillStyle = grade;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+      vignette(ctx, W, H, 0.5);
+      grain(ctx, W, H, 0.05);
+      return;
+    }
+
     // 밤으로 기운 서울 하늘 — 크레마 골드만 빛난다
     const sky = ctx.createLinearGradient(0, 0, 0, H);
     sky.addColorStop(0, "#0C0F1A");
@@ -582,8 +627,25 @@ export class GameScene {
     const ctx = fitCanvas(this.canvas, this.view);
     ctx.clearRect(0, 0, W, H);
     const light = lightingFor(snapshot.gameMinute);
+    // 레터박스 영역까지 통째로 클리어 — 리사이즈 잔상 방지 + 디오라마 프레임 색
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "#100d0a";
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.restore();
     this.drawnAgents = [];
     this.drawnTables = [];
+    if (artReady("bg")) {
+      // 아트 모드 — 일러스트 백플레이트 + 동적 레이어
+      this.drawArtScene(ctx, snapshot, light);
+      this.drawAgents(ctx, snapshot, light);
+      this.drawArtLighting(ctx, light);
+      this.drawArtSign(ctx, light);
+      this.drawWeather(ctx, snapshot, light);
+      this.drawPostFx(ctx, light);
+      this.drawFloaters(ctx, deltaSeconds);
+      return;
+    }
     this.drawSky(ctx, snapshot, light);
     this.drawBackdrop(ctx, snapshot, light);
     this.drawGround(ctx, snapshot, light);
@@ -592,6 +654,240 @@ export class GameScene {
     this.drawWeather(ctx, snapshot, light);
     this.drawPostFx(ctx, light);
     this.drawFloaters(ctx, deltaSeconds);
+  }
+
+  // ── 아트 모드: 백플레이트 위에 동적 요소만 얹는다 ──
+  // 시뮬레이션 좌표(테이블·문·보도)는 art.js의 3분할 매핑으로 이미지와 정렬돼 있다.
+  drawArtScene(ctx, snapshot, light) {
+    drawBackplate(ctx);
+    const A = ANCHOR;
+
+    // 테이블 — 시뮬 테이블 수만큼 홀 바닥에 스탬프
+    const simTables = snapshot.tables ?? [];
+    const n = Math.min(6, Math.max(simTables.length, 3));
+    this.tableSpots = [];
+    const minute = snapshot.gameMinute;
+    for (let i = 0; i < n; i += 1) {
+      const t = n === 1 ? 0.5 : i / (n - 1);
+      const tx = lerp(A.hallLeft + 30, A.hallRight - 40, t);
+      const ty = A.hallFloorY;
+      drawTableProp(ctx, tx, ty, 118);
+      this.tableSpots.push({ x: tx, y: ty - 60 });
+      const table = simTables[i];
+      const isDirty = table?.state === "dirty";
+      const isCleaning = isDirty && table.cleanAt > minute && table.cleaningBy
+        && (table.cleaningBy === "owner" || table.cleanAt - minute <= 5.01);
+      const topY = ty - 80;
+      if (table?.state === "seated") {
+        ctx.fillStyle = "#f3ede0";
+        ctx.beginPath();
+        ctx.ellipse(tx - 8, topY, 6, 3, 0, 0, Math.PI * 2);
+        ctx.ellipse(tx + 8, topY, 6, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (isDirty) {
+        for (let d = 0; d < 3; d += 1) {
+          ctx.fillStyle = d % 2 ? "#ded5c2" : "#c8bda6";
+          ctx.beginPath();
+          ctx.ellipse(tx - 6 + d * 6, topY - d * 4, 7 - d, 3.4, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "rgba(60,50,36,.5)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+        if (!isCleaning) {
+          const pulse = 1 + Math.sin(this.time * 4) * 0.12;
+          ctx.strokeStyle = "rgba(244,81,30,.85)";
+          ctx.lineWidth = 2.4;
+          ctx.setLineDash([5, 5]);
+          ctx.beginPath();
+          ctx.arc(tx, topY - 2, 28 * pulse, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          drawEmotionChip(ctx, tx, topY - 32, "dishes", this.time + i);
+        } else {
+          const sparkle = Math.abs(Math.sin(this.time * 6 + i));
+          ctx.fillStyle = `rgba(114,214,255,${0.4 + sparkle * 0.5})`;
+          ctx.font = "800 15px Arial";
+          ctx.textAlign = "center";
+          ctx.fillText("✦", tx + 20, topY - 14 - sparkle * 4);
+        }
+        this.drawnTables.push({ id: table.id, x: tx, y: topY, dirty: true, cleaning: !!isCleaning });
+      }
+    }
+
+    // 바리스타 — 주문이 밀리면 손이 빨라진다
+    const busy = snapshot.queueLength > 0;
+    drawCharacter(ctx, { randomKey: 2, customer: { id: "staff" }, facing: 1 },
+      A.baristaX, A.baristaY, { scale: 0.95, walking: busy ? 1 : 0, time: this.time * (busy ? 1.7 : 0.6) });
+
+    // 김 파티클 — 머신 위
+    if (busy && Math.random() < 0.3) {
+      this.steamParticles.push({ x: A.machineX + (Math.random() - 0.5) * 26, y: A.machineTop, life: 1, drift: (Math.random() - 0.5) * 8 });
+    } else if (Math.random() < 0.05) {
+      this.steamParticles.push({ x: A.machineX, y: A.machineTop, life: 1, drift: (Math.random() - 0.5) * 6 });
+    }
+    this.steamParticles = this.steamParticles.filter((p) => p.life > 0);
+    for (const p of this.steamParticles) {
+      p.life -= 0.012;
+      p.y -= 0.7;
+      p.x += p.drift * 0.012;
+      ctx.globalAlpha = p.life * 0.22;
+      ctx.fillStyle = "#fefaf0";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 5 * (1.7 - p.life), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // 주문 티켓 스트립 — 밀린 주문이 카운터 위에 보인다
+    const tickets = Math.min(7, snapshot.queueLength);
+    if (tickets > 0) {
+      for (let i = 0; i < tickets; i += 1) {
+        ctx.fillStyle = i < 5 ? "#fff8e8" : "#f4b0a0";
+        ctx.fillRect(A.machineX + 60 + i * 20, A.machineTop - 34, 15, 21);
+        ctx.strokeStyle = "rgba(30,28,20,.5)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(A.machineX + 60 + i * 20, A.machineTop - 34, 15, 21);
+      }
+    }
+
+    // 홀 직원 — 치울 테이블로 실제로 이동한다
+    const staffCount = snapshot.hallStaff ?? 0;
+    const cleaningTables = simTables.filter((table) => table.state === "dirty" && table.cleaningBy === "staff" && table.cleanAt > minute && table.cleanAt - minute <= 5.01);
+    for (let s = 0; s < staffCount; s += 1) {
+      const target = cleaningTables[s];
+      let sx = A.hallRight - 150 + s * 44;
+      let sy = A.hallFloorY - 2;
+      let working = false;
+      if (target && this.tableSpots[target.id]) {
+        sx = this.tableSpots[target.id].x + 30;
+        sy = this.tableSpots[target.id].y + 30;
+        working = true;
+      }
+      drawCharacter(ctx, { randomKey: 40 + s, customer: { id: "staff" }, facing: -1 }, sx, sy,
+        { scale: 0.85, walking: working ? 1 : 0, time: this.time * (working ? 1.6 : 0.7) + s });
+    }
+
+    // 사장 아바타 — 근무 중일 때만
+    if (snapshot.onDuty) {
+      const station = snapshot.stationActive;
+      const moving = snapshot.stationMoving;
+      const target = snapshot.ownerStation;
+      const spots = {
+        bar: { x: A.machineX + 96, y: A.baristaY },
+        hall: { x: A.hallLeft + 66, y: A.hallFloorY + 2 },
+        door: { x: A.doorRight + 26, y: SIDEWALK_Y + 44 },
+      };
+      const spot = spots[target] ?? spots.bar;
+      const busyPose = station === "bar" || station === "hall" || moving;
+      drawCharacter(ctx, { randomKey: 77, customer: { color: snapshot.ownerLook?.color ?? "#23241f", id: "owner" }, facing: target === "door" ? 1 : -1 },
+        spot.x, spot.y, { scale: 1.05, walking: busyPose ? 1 : 0, time: this.time * (busyPose ? 1.7 : 0.6), hair: snapshot.ownerLook?.hair });
+      ctx.fillStyle = moving ? "#b4674d" : "#d9a441";
+      roundedRect(ctx, spot.x - 24, spot.y - 236, 48, 17, 8);
+      ctx.fill();
+      ctx.fillStyle = "#14100d";
+      ctx.font = "800 10px 'Noto Sans KR', Arial, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(moving ? "이동 중" : "사장", spot.x, spot.y - 224);
+      this.ownerSpot = spot;
+    }
+  }
+
+  // 간판 — 라이팅 위에 그려 밤에도 빛난다
+  drawArtSign(ctx, light) {
+    const A = ANCHOR;
+    ctx.save();
+    const glow = light.night > 0.3;
+    if (glow) {
+      ctx.shadowColor = "#ffb25e";
+      ctx.shadowBlur = 26;
+    }
+    ctx.fillStyle = glow ? "#ffd9a8" : "#e8d5b5";
+    ctx.font = "900 34px 'Noto Sans KR', Arial, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(this.restaurantName, A.signX, A.signY);
+    ctx.shadowBlur = glow ? 12 : 0;
+    ctx.fillStyle = glow ? "rgba(255, 214, 150, .85)" : "rgba(240, 198, 116, .75)";
+    ctx.font = "800 11px SFMono-Regular, monospace";
+    ctx.fillText(`${this.format.name.toUpperCase()} · SEONGSU`, A.signX + 2, A.signY + 20);
+    ctx.shadowBlur = glow ? 18 : 0;
+    ctx.shadowColor = "#ff6b3d";
+    ctx.fillStyle = glow ? "#ff5a26" : "#f4511e";
+    ctx.fillRect(A.signRight - 86, A.signY - 26, 86, 34);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#fff8ec";
+    ctx.font = "900 15px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("OPEN", A.signRight - 43, A.signY - 3);
+    ctx.restore();
+  }
+
+  // 아트 모드 시간대 라이팅 — 백플레이트(오후 고정)를 아침/저녁/밤으로 옮긴다
+  drawArtLighting(ctx, light) {
+    const A = ANCHOR;
+    const hour = light.hour;
+    // 아침: 차가운 톤
+    const morning = clamp((10.5 - hour) / 3);
+    if (morning > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = "multiply";
+      ctx.globalAlpha = morning * 0.14;
+      ctx.fillStyle = "#b8c8dc";
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+    // 저녁: 웜 톤
+    if (light.dusk > 0 && light.night < 0.6) {
+      ctx.save();
+      ctx.globalCompositeOperation = "overlay";
+      ctx.globalAlpha = light.dusk * (1 - light.night) * 0.28;
+      ctx.fillStyle = "#e8894c";
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+    // 밤: 바깥은 깊게 누르고, 실내·조명·간판만 광원으로 남긴다
+    if (light.night > 0.02) {
+      // 어둠은 하늘이 제일 깊고 노면은 덜 — 세로 그라데이션 멀티플라이
+      ctx.save();
+      ctx.globalCompositeOperation = "multiply";
+      ctx.globalAlpha = light.night;
+      const dark = ctx.createLinearGradient(0, 0, 0, H);
+      dark.addColorStop(0, "#1c2246");
+      dark.addColorStop(0.34, "#2c3054");
+      dark.addColorStop(0.78, "#4a4258");
+      dark.addColorStop(1, "#3a3448");
+      ctx.fillStyle = dark;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      // 실내가 화면의 광원 — 창 안쪽을 확실하게 되살린다 (가장자리는 부드럽게)
+      ctx.globalAlpha = light.night * 0.6;
+      ctx.filter = "blur(26px)";
+      const warm = ctx.createLinearGradient(0, A.interior.y, 0, A.interior.y + A.interior.h);
+      warm.addColorStop(0, "rgba(255, 202, 122, .78)");
+      warm.addColorStop(0.55, "rgba(255, 186, 100, .6)");
+      warm.addColorStop(1, "rgba(230, 160, 84, .42)");
+      ctx.fillStyle = warm;
+      ctx.fillRect(A.interior.x + 20, A.interior.y + 16, A.interior.w - 40, A.interior.h - 24);
+      ctx.filter = "none";
+      ctx.globalAlpha = 1;
+      // 펜던트 램프 + 벽 부착등
+      for (const lamp of A.lamps) {
+        glowDot(ctx, lamp.x, lamp.y + 14, 78, "#FFD97A", light.night * 0.72);
+      }
+      for (const sconce of A.sconces) {
+        glowDot(ctx, sconce.x, sconce.y, 64, "#FFD97A", light.night * 0.6);
+      }
+      // 간판 글로우
+      glowDot(ctx, (A.signX + A.signRight) / 2, A.signY - 6, 250, "#D9A441", light.night * 0.3);
+      // 유리문
+      glowDot(ctx, (A.doorLeft + A.doorRight) / 2, (A.doorTop + A.doorBottom) / 2, 120, "#FFC97E", light.night * 0.42);
+      // 실내 불빛이 보도로 쏟아진다
+      lightCone(ctx, (A.interior.x + A.interior.w * 0.5), SIDEWALK_Y - 6, A.interior.w * 0.9, 130, "#F0C674", light.night * 0.22);
+      ctx.restore();
+    }
   }
 
   // 후처리: 광원 블룸 → 색보정 → 비네팅 → 필름 그레인.
@@ -1300,7 +1596,7 @@ export class GameScene {
         const spot = agent.tableId != null ? spots[agent.tableId] : spots[index % Math.max(1, spots.length)];
         if (spot) {
           const side = index % 2 === 0 ? -1 : 1;
-          const seatX = spot.x + side * 38;
+          const seatX = spot.x + side * (artReady("bg") ? 58 : 38);
           const seatY = spot.y + 26;
           if (progress < 0.12) {
             // 입장 애니메이션: 문에서 자리까지 걸어 들어온다
@@ -1380,9 +1676,9 @@ export class GameScene {
       ctx.restore();
       this.drawnAgents.push({ id: agent.id, x, y: y - 30, agent, background });
 
-      if (chip && !background) drawEmotionChip(ctx, x, y - 72, chip, this.time + (agent.randomKey % 10));
+      if (chip && !background) drawEmotionChip(ctx, x, y - (artReady("bg") ? (seated ? 160 : 205) * scale : 72), chip, this.time + (agent.randomKey % 10));
       if (agent.bubble && !background && ["leaving", "eating", "pickup"].includes(agent.state)) {
-        bubbles.push({ x, y, text: agent.bubble, tone: agent.bubbleTone, priority: agent.bubbleTone === "bad" ? 0 : 1 });
+        bubbles.push({ x, y: y - (artReady("bg") ? 120 : 0), text: agent.bubble, tone: agent.bubbleTone, priority: agent.bubbleTone === "bad" ? 0 : 1 });
       }
     }
 

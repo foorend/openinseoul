@@ -7,8 +7,16 @@
 // 시뮬레이션은 게임 중에도 흐른다. 여기서 한 일이 그대로 매장의 결과가 된다.
 // 미니게임만큼은 고해상도로 그린다 — 도트 씬과 달리 DPR 풀 해상도.
 
+import { artReady, drawFigure, drawTableProp, coverDraw } from "./art.js";
+
 const SKIN_TONES = ["#f0c39a", "#e8b088", "#d9a077", "#f4cfa8"];
 const HAIR_TONES = ["#241f1c", "#3a2e24", "#4a3a2a", "#1c1c22", "#5e2f38"];
+
+// 몸통 색 → 스프라이트 아키타입 (미니게임 등장인물 매핑)
+const BODY_SPRITE = {
+  "#5fa57c": "regular", "#d9a441": "student", "#c25a4a": "office", "#8a6fb8": "hopper",
+  "#3a7ba8": "regular", "#7ba23f": "student", "#a86f3a": "office", "#7d5ba6": "hopper",
+};
 
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -17,6 +25,22 @@ function roundRect(ctx, x, y, w, h, r) {
 
 // 풍부한 캐릭터 — 그림자·다리·팔·머리·헤어·소품까지 그린다.
 function paintPerson(ctx, { x, y, scale = 1, body = "#666", hair, skin, face = null, prop = null, time = 0, walk = 0, facing = 1, glow = null }) {
+  // 아트 모드 — 운영 씬과 같은 일러스트 스프라이트로 그린다
+  const spriteKey = glow ? "owner" : BODY_SPRITE[body];
+  if (spriteKey && artReady(spriteKey)) {
+    const sbob = walk ? Math.sin(time * 9 + x * 0.05) * 2.2 : Math.sin(time * 2 + x * 0.05) * 0.8;
+    if (glow) {
+      ctx.save();
+      ctx.strokeStyle = glow;
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.ellipse(x, y + 3, 20, 6.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    drawFigure(ctx, spriteKey, x, y + sbob, { h: 104 * scale, facing, walking: walk, time: time + x * 0.03 });
+    return;
+  }
   const key = Math.abs(Math.round(x * 7 + y * 3));
   const skinTone = skin ?? SKIN_TONES[key % SKIN_TONES.length];
   const hairTone = hair ?? HAIR_TONES[(key + 1) % HAIR_TONES.length];
@@ -466,34 +490,36 @@ export class FlyerRun extends ArcadeShell {
 
   render(ctx) {
     if (this.shake) ctx.translate((Math.random() - 0.5) * 9 * this.shake, (Math.random() - 0.5) * 9 * this.shake);
-    // 밤거리 — 가로등 광원과 창문 불빛
-    const bg = ctx.createLinearGradient(0, 0, 0, this.H);
-    bg.addColorStop(0, "#131019");
-    bg.addColorStop(0.7, "#1e1712");
-    bg.addColorStop(1, "#2a1e14");
-    ctx.fillStyle = bg;
-    ctx.fillRect(-12, -12, this.W + 24, this.H + 24);
-    // 멀리 건물 실루엣 + 창문
-    ctx.fillStyle = "#191420";
-    ctx.fillRect(0, 40, this.W, 130);
-    for (let i = 0; i < 22; i += 1) {
-      const wx = (i * 97) % this.W;
-      const wy = 56 + ((i * 53) % 100);
-      ctx.fillStyle = (i % 3 === 0) ? "rgba(240,198,116,.5)" : "rgba(240,198,116,.14)";
-      ctx.fillRect(wx, wy, 7, 9);
-    }
-    // 가로등 빛 기둥
-    const lampX = this.W * 0.82;
-    const glow = ctx.createRadialGradient(lampX, 30, 6, lampX, 30, 240);
-    glow.addColorStop(0, "rgba(240,198,116,.28)");
-    glow.addColorStop(1, "transparent");
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, this.W, this.H);
-    // 보도
-    ctx.strokeStyle = "rgba(240,230,214,.08)";
-    ctx.lineWidth = 1.4;
-    for (let y = 190; y < this.H; y += 64) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.W, y); ctx.stroke();
+    if (artReady("mg-street")) {
+      // 아트 모드 — 일러스트 밤거리
+      coverDraw(ctx, "mg-street", this.W, this.H);
+    } else {
+      // 밤거리 — 가로등 광원과 창문 불빛
+      const bg = ctx.createLinearGradient(0, 0, 0, this.H);
+      bg.addColorStop(0, "#131019");
+      bg.addColorStop(0.7, "#1e1712");
+      bg.addColorStop(1, "#2a1e14");
+      ctx.fillStyle = bg;
+      ctx.fillRect(-12, -12, this.W + 24, this.H + 24);
+      ctx.fillStyle = "#191420";
+      ctx.fillRect(0, 40, this.W, 130);
+      for (let i = 0; i < 22; i += 1) {
+        const wx = (i * 97) % this.W;
+        const wy = 56 + ((i * 53) % 100);
+        ctx.fillStyle = (i % 3 === 0) ? "rgba(240,198,116,.5)" : "rgba(240,198,116,.14)";
+        ctx.fillRect(wx, wy, 7, 9);
+      }
+      const lampX = this.W * 0.82;
+      const glow = ctx.createRadialGradient(lampX, 30, 6, lampX, 30, 240);
+      glow.addColorStop(0, "rgba(240,198,116,.28)");
+      glow.addColorStop(1, "transparent");
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, this.W, this.H);
+      ctx.strokeStyle = "rgba(240,230,214,.08)";
+      ctx.lineWidth = 1.4;
+      for (let y = 190; y < this.H; y += 64) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.W, y); ctx.stroke();
+      }
     }
     // 떨어지는 사람들
     for (const person of this.people) {
@@ -646,49 +672,66 @@ export class KitchenRush extends ArcadeShell {
   }
 
   render(ctx) {
-    // 주방 배경 — 타일 벽과 조리대
-    const bg = ctx.createLinearGradient(0, 0, 0, this.H);
-    bg.addColorStop(0, "#2a2019");
-    bg.addColorStop(1, "#1c150f");
-    ctx.fillStyle = bg;
-    ctx.fillRect(-12, -12, this.W + 24, this.H + 24);
-    // 타일
-    ctx.strokeStyle = "rgba(240,230,214,.05)";
-    ctx.lineWidth = 1;
-    for (let x = 0; x < this.W; x += 42) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.H * 0.34); ctx.stroke(); }
-    for (let y = 0; y < this.H * 0.34; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.W, y); ctx.stroke(); }
-    // 선반 + 잔들
-    ctx.fillStyle = "#4a3524";
-    ctx.fillRect(30, 46, this.W - 60, 10);
-    for (let i = 0; i < 8; i += 1) {
-      ctx.fillStyle = ["#efe6d8", "#d9a441", "#8fae9b", "#c9a284"][i % 4];
-      roundRect(ctx, 60 + i * (this.W - 140) / 7, 28, 16, 18, 3);
-      ctx.fill();
+    const artMode = artReady("mg-kitchen");
+    if (artMode) {
+      // 아트 모드 — 일러스트 주방 (스테이션은 그림이 담당)
+      coverDraw(ctx, "mg-kitchen", this.W, this.H);
+    } else {
+      // 주방 배경 — 타일 벽과 조리대
+      const bg = ctx.createLinearGradient(0, 0, 0, this.H);
+      bg.addColorStop(0, "#2a2019");
+      bg.addColorStop(1, "#1c150f");
+      ctx.fillStyle = bg;
+      ctx.fillRect(-12, -12, this.W + 24, this.H + 24);
+      ctx.strokeStyle = "rgba(240,230,214,.05)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < this.W; x += 42) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.H * 0.34); ctx.stroke(); }
+      for (let y = 0; y < this.H * 0.34; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.W, y); ctx.stroke(); }
+      ctx.fillStyle = "#4a3524";
+      ctx.fillRect(30, 46, this.W - 60, 10);
+      for (let i = 0; i < 8; i += 1) {
+        ctx.fillStyle = ["#efe6d8", "#d9a441", "#8fae9b", "#c9a284"][i % 4];
+        roundRect(ctx, 60 + i * (this.W - 140) / 7, 28, 16, 18, 3);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#5a3c2b";
+      ctx.fillRect(0, this.H * 0.52, this.W, 30);
+      ctx.fillStyle = "#41291d";
+      ctx.fillRect(0, this.H * 0.52 + 30, this.W, this.H);
     }
-    // 조리대
-    ctx.fillStyle = "#5a3c2b";
-    ctx.fillRect(0, this.H * 0.52, this.W, 30);
-    ctx.fillStyle = "#41291d";
-    ctx.fillRect(0, this.H * 0.52 + 30, this.W, this.H);
 
     for (let i = 0; i < this.lanes.length; i += 1) {
       const lane = this.lanes[i];
       const active = i === this.slot;
-      // 장비 유닛
-      ctx.fillStyle = active ? "#463527" : "#332619";
-      roundRect(ctx, lane.x - 64, this.H * 0.3, 128, this.H * 0.22, 8);
-      ctx.fill();
-      if (active) {
-        ctx.strokeStyle = "rgba(240,198,116,.75)";
-        ctx.lineWidth = 2.4;
+      if (!artMode) {
+        // 장비 유닛
+        ctx.fillStyle = active ? "#463527" : "#332619";
         roundRect(ctx, lane.x - 64, this.H * 0.3, 128, this.H * 0.22, 8);
-        ctx.stroke();
+        ctx.fill();
+        ctx.font = "44px serif";
+        ctx.textAlign = "center";
+        ctx.fillText(lane.icon, lane.x, this.H * 0.47);
       }
-      ctx.font = "44px serif";
-      ctx.textAlign = "center";
-      ctx.fillText(lane.icon, lane.x, this.H * 0.47);
+      if (active) {
+        // 활성 스테이션 — 바닥 스포트라이트 + 프레임
+        ctx.save();
+        ctx.strokeStyle = "rgba(240,198,116,.85)";
+        ctx.lineWidth = 2.6;
+        roundRect(ctx, lane.x - 70, this.H * 0.28, 140, this.H * 0.26, 10);
+        ctx.stroke();
+        if (artMode) {
+          const spot = ctx.createRadialGradient(lane.x, this.H * 0.42, 10, lane.x, this.H * 0.42, 120);
+          spot.addColorStop(0, "rgba(240,198,116,.22)");
+          spot.addColorStop(1, "transparent");
+          ctx.globalCompositeOperation = "screen";
+          ctx.fillStyle = spot;
+          ctx.fillRect(lane.x - 130, this.H * 0.2, 260, this.H * 0.4);
+        }
+        ctx.restore();
+      }
       ctx.font = "700 13px 'NeoDunggeunmo', sans-serif";
-      ctx.fillStyle = "rgba(240,230,214,.8)";
+      ctx.textAlign = "center";
+      ctx.fillStyle = active ? "#ffd98a" : "rgba(240,230,214,.8)";
       ctx.fillText(lane.name, lane.x, this.H * 0.585);
 
       // 주문 티켓 — 실제 메뉴 이름 + QWER 콤보
@@ -891,45 +934,48 @@ export class HallService extends ArcadeShell {
   }
 
   render(ctx) {
-    // 홀 배경 — 창밖 야경과 나무 바닥
-    const bg = ctx.createLinearGradient(0, 0, 0, this.H);
-    bg.addColorStop(0, "#241b14");
-    bg.addColorStop(1, "#1a130d");
-    ctx.fillStyle = bg;
-    ctx.fillRect(-12, -12, this.W + 24, this.H + 24);
-    // 창문
-    for (let i = 0; i < 3; i += 1) {
-      const wx = this.W * (0.2 + i * 0.3);
-      ctx.fillStyle = "#131019";
-      roundRect(ctx, wx - 52, 24, 104, 88, 6);
-      ctx.fill();
-      ctx.fillStyle = "rgba(240,198,116,.28)";
-      ctx.fillRect(wx - 40, 40, 12, 10);
-      ctx.fillRect(wx + 12, 66, 14, 9);
-      ctx.strokeStyle = "#3a2c20";
-      ctx.lineWidth = 3;
-      roundRect(ctx, wx - 52, 24, 104, 88, 6);
-      ctx.stroke();
-    }
-    // 펜던트 조명
-    for (let i = 0; i < this.tables.length; i += 1) {
-      const lx = this.tables[i].x;
-      ctx.strokeStyle = "#171310";
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, 130); ctx.stroke();
-      ctx.fillStyle = "#b4674d";
-      ctx.beginPath(); ctx.arc(lx, 136, 10, Math.PI, 0); ctx.fill();
-      const lampGlow = ctx.createRadialGradient(lx, 150, 4, lx, 190, 110);
-      lampGlow.addColorStop(0, "rgba(240,198,116,.2)");
-      lampGlow.addColorStop(1, "transparent");
-      ctx.fillStyle = lampGlow;
-      ctx.fillRect(lx - 110, 130, 220, 180);
-    }
-    // 바닥 플랭크
-    ctx.strokeStyle = "rgba(240,230,214,.05)";
-    ctx.lineWidth = 1.2;
-    for (let y = this.H * 0.62; y < this.H; y += 26) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.W, y); ctx.stroke();
+    const artMode = artReady("mg-hall");
+    if (artMode) {
+      // 아트 모드 — 일러스트 홀
+      coverDraw(ctx, "mg-hall", this.W, this.H);
+    } else {
+      // 홀 배경 — 창밖 야경과 나무 바닥
+      const bg = ctx.createLinearGradient(0, 0, 0, this.H);
+      bg.addColorStop(0, "#241b14");
+      bg.addColorStop(1, "#1a130d");
+      ctx.fillStyle = bg;
+      ctx.fillRect(-12, -12, this.W + 24, this.H + 24);
+      for (let i = 0; i < 3; i += 1) {
+        const wx = this.W * (0.2 + i * 0.3);
+        ctx.fillStyle = "#131019";
+        roundRect(ctx, wx - 52, 24, 104, 88, 6);
+        ctx.fill();
+        ctx.fillStyle = "rgba(240,198,116,.28)";
+        ctx.fillRect(wx - 40, 40, 12, 10);
+        ctx.fillRect(wx + 12, 66, 14, 9);
+        ctx.strokeStyle = "#3a2c20";
+        ctx.lineWidth = 3;
+        roundRect(ctx, wx - 52, 24, 104, 88, 6);
+        ctx.stroke();
+      }
+      for (let i = 0; i < this.tables.length; i += 1) {
+        const lx = this.tables[i].x;
+        ctx.strokeStyle = "#171310";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, 130); ctx.stroke();
+        ctx.fillStyle = "#b4674d";
+        ctx.beginPath(); ctx.arc(lx, 136, 10, Math.PI, 0); ctx.fill();
+        const lampGlow = ctx.createRadialGradient(lx, 150, 4, lx, 190, 110);
+        lampGlow.addColorStop(0, "rgba(240,198,116,.2)");
+        lampGlow.addColorStop(1, "transparent");
+        ctx.fillStyle = lampGlow;
+        ctx.fillRect(lx - 110, 130, 220, 180);
+      }
+      ctx.strokeStyle = "rgba(240,230,214,.05)";
+      ctx.lineWidth = 1.2;
+      for (let y = this.H * 0.62; y < this.H; y += 26) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.W, y); ctx.stroke();
+      }
     }
 
     for (let i = 0; i < this.tables.length; i += 1) {
@@ -938,29 +984,41 @@ export class HallService extends ArcadeShell {
       // 손님
       if (table.guest) {
         paintPerson(ctx, {
-          x: table.x - 40, y: this.H * 0.56, scale: 0.9,
+          x: table.x - 46, y: this.H * 0.62, scale: 0.9,
           body: table.guestColor, skin: table.guestSkin, hair: table.guestHair,
           time: this.time, walk: 0,
         });
       }
       // 테이블
-      ctx.fillStyle = active ? "#6d4a36" : "#54382a";
-      roundRect(ctx, table.x - 52, this.H * 0.55, 104, 18, 4);
-      ctx.fill();
-      if (active) {
-        ctx.strokeStyle = "rgba(240,198,116,.7)";
-        ctx.lineWidth = 2.4;
+      if (artMode) {
+        drawTableProp(ctx, table.x, this.H * 0.66, 92);
+        if (active) {
+          ctx.save();
+          ctx.strokeStyle = "rgba(240,198,116,.85)";
+          ctx.lineWidth = 2.6;
+          ctx.beginPath();
+          ctx.ellipse(table.x, this.H * 0.665, 66, 15, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      } else {
+        ctx.fillStyle = active ? "#6d4a36" : "#54382a";
         roundRect(ctx, table.x - 52, this.H * 0.55, 104, 18, 4);
-        ctx.stroke();
+        ctx.fill();
+        if (active) {
+          ctx.strokeStyle = "rgba(240,198,116,.7)";
+          ctx.lineWidth = 2.4;
+          roundRect(ctx, table.x - 52, this.H * 0.55, 104, 18, 4);
+          ctx.stroke();
+        }
+        ctx.fillStyle = "#3a2a1f";
+        ctx.fillRect(table.x - 42, this.H * 0.55 + 18, 9, 30);
+        ctx.fillRect(table.x + 33, this.H * 0.55 + 18, 9, 30);
+        ctx.fillStyle = "#efe6d8";
+        ctx.beginPath();
+        ctx.ellipse(table.x + 18, this.H * 0.55 + 4, 9, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
       }
-      ctx.fillStyle = "#3a2a1f";
-      ctx.fillRect(table.x - 42, this.H * 0.55 + 18, 9, 30);
-      ctx.fillRect(table.x + 33, this.H * 0.55 + 18, 9, 30);
-      // 잔·접시
-      ctx.fillStyle = "#efe6d8";
-      ctx.beginPath();
-      ctx.ellipse(table.x + 18, this.H * 0.55 + 4, 9, 4, 0, 0, Math.PI * 2);
-      ctx.fill();
 
       // 과제 말풍선
       if (table.task) {

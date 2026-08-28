@@ -1291,8 +1291,20 @@ const REGISTRY = {
   equipment: EQUIPMENT_ART,
 };
 
+import { artReady, coverDraw } from "./art.js";
+
 export function drawIllustration(ctx, w, h, kind, id, time, extra) {
   ctx.clearRect(0, 0, w, h);
+  // 아트 모드 — 상권·집기는 일러스트 에셋으로 (미로드시 아래 procedural 폴백)
+  const artKey = kind === "district" ? `district-${id}`
+    : kind === "equipment" ? `eq-${id}` : null;
+  if (artKey && artReady(artKey)) {
+    const drift = 1.02 + Math.sin(time * 0.12) * 0.012;
+    coverDraw(ctx, artKey, w, h, { zoom: drift, panX: 0.5 + Math.sin(time * 0.05) * 0.02 });
+    vignette(ctx, w, h, 0.4);
+    grain(ctx, w, h, 0.04);
+    return;
+  }
   if (kind === "hours") {
     drawHourPlan(ctx, w, h, id, extra, time);
   } else {
