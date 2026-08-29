@@ -759,8 +759,10 @@ export class KitchenRush extends ArcadeShell {
     this.playerFacing = 1;
     this.playerReact = null;
     this.workPulse = 0;
-    this.cookFx = [];   // 완성/설익음/탄 결과물 연출
-    this.doughFx = [];  // 반죽이 오븐으로 미끄러져 들어가는 연출
+    this.cookFx = [];    // 완성 결과물 연출
+    this.doughFx = [];   // 반죽이 오븐으로 미끄러져 들어가는 연출
+    this.smokeFx = [];   // 연기 기둥 (탄 것·식은 것)
+    this.playerHold = null; // 사장이 들어 보이는 결과물 (실패작 등)
   }
 
   // 아트 로드가 프레임 도중 끝나도 앵커가 따라가게 매 프레임 동기화
@@ -778,24 +780,28 @@ export class KitchenRush extends ArcadeShell {
   spawnOrder() {
     const empty = this.lanes.map((lane, index) => ({ lane, index })).filter((item) => !item.lane.order);
     if (!empty.length) return;
-    const menus = this.sim.menus;
-    const menu = menus[Math.floor(Math.random() * menus.length)];
-    const laneIndex = laneFor(menu, this.bakes);
-    const target = empty.find((item) => item.index === laneIndex) ?? empty[Math.floor(Math.random() * empty.length)];
-    // 메뉴마다 홀드 키 1개 + 적정 게이지 구간 (복잡한 메뉴일수록 좁다)
-    let hash = 0;
-    for (const ch of menu.id) hash = (hash * 31 + ch.charCodeAt(0)) % 9973;
-    const width = Math.max(0.14, 0.3 - (menu.complexity ?? 1) * 0.05);
-    const z0 = 0.52 + (hash % 5) * 0.03;
-    target.lane.order = {
-      menu,
-      key: KEY_POOL[hash % 4],
-      zone: [z0, Math.min(0.95, z0 + width)],
-      gauge: 0,
-      holding: false,
-      patience: 10,
-      pop: 0,
-    };
+    // 메뉴는 반드시 자기 장비에서만 — 베이커리는 오븐, 우유 메뉴는 스티머, 나머지는 머신.
+    // 빈 레인 중에서 그 레인에 속한 메뉴를 뽑는다 (맞는 메뉴가 없는 레인은 건너뜀)
+    const shuffled = [...empty].sort(() => Math.random() - 0.5);
+    for (const { lane, index } of shuffled) {
+      const pool = this.sim.menus.filter((menu) => laneFor(menu, this.bakes) === index);
+      if (!pool.length) continue;
+      const menu = pool[Math.floor(Math.random() * pool.length)];
+      let hash = 0;
+      for (const ch of menu.id) hash = (hash * 31 + ch.charCodeAt(0)) % 9973;
+      const width = Math.max(0.14, 0.3 - (menu.complexity ?? 1) * 0.05);
+      const z0 = 0.52 + (hash % 5) * 0.03;
+      lane.order = {
+        menu,
+        key: KEY_POOL[hash % 4],
+        zone: [z0, Math.min(0.95, z0 + width)],
+        gauge: 0,
+        holding: false,
+        patience: 10,
+        pop: 0,
+      };
+      return;
+    }
   }
 
   finishCook(lane, index) {
@@ -805,6 +811,7 @@ export class KitchenRush extends ArcadeShell {
     this.sim.expressServe();
     this.workPulse = 0.5;
     this.playerReact = { type: index === 2 ? "love" : "star", t: 0.9, max: 0.9 };
+    this.playerHold = null; // 실패작 들고 있던 건 내려놓는다
     this.cookFx.push({ type: "done", lane: index, t: 0, menu: order.menu });
     this.burst(lane.x, lane.mouthY - 20, "#8fd6ab", 16, 140);
     this.addFloat(lane.x, lane.topY - 78, `${order.menu.name} 완성!`, "#8fd6ab");
@@ -816,13 +823,13 @@ export class KitchenRush extends ArcadeShell {
     const order = lane.order;
     this.stats.wrong += 1;
     this.breakCombo();
-    this.playerReact = { type: kind === "burnt" ? "shock" : "sweat", t: 1.0, max: 1.0 };
-    this.cookFx.push({ type: kind, lane: index, t: 0, menu: order.menu });
+    this.playerReact = { type: kind === "burnt" ? "shock" : "sweat", t: 1.2, max: 1.2 };
+    // 실패작을 직접 들어 보인다 — 말 대신 실물
+    this.playerHold = { kind, menu: order.menu, t: 1.5, max: 1.5, lane: index };
     if (kind === "burnt") {
       this.screenFlash("rgba(120, 60, 30, .3)");
-      this.addFloat(lane.x, lane.topY - 78, `타버렸다… 다시!`, "#e07a6a");
-    } else {
-      this.addFloat(lane.x, lane.topY - 78, `설익었다… 다시!`, "#e0b06a");
+      // 장비에서 검은 연기가 솟는다 (오븐은 굵고 길게)
+      this.smokeFx.push({ x: lane.x + (index === 2 ? 4 : 0), y: index === 2 ? (lane.topY + lane.mouthY) / 2 : lane.mouthY - 18, t: 0, dur: index === 2 ? 2.2 : 1.3, dark: true, big: index === 2 });
     }
     this.sounds?.bad();
     order.patience -= 1.6;
@@ -840,6 +847,9 @@ export class KitchenRush extends ArcadeShell {
     this.cookFx = this.cookFx.filter((fx) => fx.t < 1.1);
     for (const fx of this.doughFx) fx.t += dt;
     this.doughFx = this.doughFx.filter((fx) => fx.t < 0.55);
+    for (const fx of this.smokeFx) fx.t += dt;
+    this.smokeFx = this.smokeFx.filter((fx) => fx.t < fx.dur);
+    if (this.playerHold) { this.playerHold.t -= dt; if (this.playerHold.t <= 0) this.playerHold = null; }
 
     this.nextOrder -= dt;
     if (this.nextOrder <= 0) {
@@ -891,7 +901,9 @@ export class KitchenRush extends ArcadeShell {
         this.stats.missed += 1;
         this.breakCombo();
         this.playerReact = { type: "sweat", t: 0.9, max: 0.9 };
-        this.addFloat(item.x, item.topY - 78, `${item.order.menu.name} 식었다…`, "#e07a6a");
+        // 주문서가 식어서 떨어진다 — 회색 김 한 줄기
+        this.cookFx.push({ type: "cold", lane: i, t: 0, menu: item.order.menu });
+        this.smokeFx.push({ x: item.x, y: item.topY - 30, t: 0, dur: 0.9, dark: false, big: false });
         this.sounds?.bad();
         item.order = null;
       }
@@ -1051,43 +1063,94 @@ export class KitchenRush extends ArcadeShell {
           }
         }
 
-        // ── 조리 중 라이브 연출 ──
+        // ── 조리 중 라이브 연출 — 진짜 만들어지는 게 보인다 ──
         if (order.holding) {
           if (i === 0) {
-            // 에스프레소 추출 줄기 + 잔
-            const streamX = lane.x + Math.sin(this.time * 14) * 0.8;
+            // 에스프레소: 그룹헤드 아래 잔이 놓이고, 두 줄기 커피가 실제로 내려와 차오른다
+            const spoutY = lane.mouthY - 30;
+            const cupW = 30;
+            const cupH = 22;
+            const cupX = lane.x - cupW / 2;
+            const cupY = lane.mouthY - cupH + 6;
+            const fillH = 3 + order.gauge * (cupH - 8);
+            // 두 줄기 추출
             ctx.strokeStyle = "#6d4324";
+            ctx.lineWidth = 2.6;
+            for (const off of [-5, 5]) {
+              const wob = Math.sin(this.time * 16 + off) * 0.7;
+              ctx.beginPath();
+              ctx.moveTo(lane.x + off + wob, spoutY);
+              ctx.lineTo(lane.x + off * 0.6 + wob, cupY + cupH - fillH);
+              ctx.stroke();
+            }
+            // 잔 속 커피 (게이지만큼 차오름)
+            ctx.fillStyle = "#5a3820";
+            ctx.fillRect(cupX + 3, cupY + cupH - 3 - fillH, cupW - 6, fillH);
+            // 크레마
+            ctx.fillStyle = "#c89a5a";
+            ctx.fillRect(cupX + 3, cupY + cupH - 3 - fillH, cupW - 6, 3);
+            // 잔 (반투명 도기)
+            ctx.strokeStyle = "#f2ead8";
             ctx.lineWidth = 3;
+            ctx.strokeRect(cupX, cupY, cupW, cupH - 2);
             ctx.beginPath();
-            ctx.moveTo(streamX, lane.mouthY - 24);
-            ctx.lineTo(streamX, lane.mouthY + 2);
+            ctx.arc(cupX + cupW + 4, cupY + cupH / 2 - 1, 5.5, -Math.PI / 2, Math.PI / 2);
             ctx.stroke();
-            ctx.fillStyle = "#f2ead8";
-            roundRect(ctx, lane.x - 10, lane.mouthY + 2, 20, 14, 3);
-            ctx.fill();
-            ctx.fillStyle = "#8a5326";
-            ctx.fillRect(lane.x - 8, lane.mouthY + 4, 16, 4 + order.gauge * 7);
+            // 트레이 받침
+            ctx.fillStyle = "rgba(20, 14, 8, .5)";
+            ctx.fillRect(cupX - 6, cupY + cupH, cupW + 12, 3);
           } else if (i === 1) {
-            // 스팀 소용돌이
+            // 스티머: 피처가 놓이고 스팀이 소용돌이친다
+            ctx.fillStyle = "#c9ced4";
+            ctx.strokeStyle = "#7e858c";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(lane.x - 12, lane.mouthY + 6);
+            ctx.lineTo(lane.x - 9, lane.mouthY - 16);
+            ctx.lineTo(lane.x + 11, lane.mouthY - 16);
+            ctx.lineTo(lane.x + 14, lane.mouthY + 6);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            // 우유 표면 (게이지만큼 거품이 부푼다)
+            ctx.fillStyle = "#fdf8ee";
+            ctx.beginPath();
+            ctx.ellipse(lane.x + 1, lane.mouthY - 16 - order.gauge * 4, 10, 3 + order.gauge * 3, 0, 0, Math.PI * 2);
+            ctx.fill();
             for (let k = 0; k < 3; k += 1) {
               const sp = (this.time * 1.4 + k * 0.33) % 1;
               ctx.globalAlpha = (1 - sp) * 0.5;
               ctx.fillStyle = "#fff";
               ctx.beginPath();
-              ctx.arc(lane.x - 8 + Math.sin(sp * 7 + k) * 8, lane.mouthY - 10 - sp * 44, 3.5 + sp * 6, 0, Math.PI * 2);
+              ctx.arc(lane.x - 4 + Math.sin(sp * 7 + k) * 8, lane.mouthY - 24 - sp * 44, 3.5 + sp * 6, 0, Math.PI * 2);
               ctx.fill();
             }
             ctx.globalAlpha = 1;
           } else {
-            // 오븐 내부 글로우 — 게이지만큼 달아오른다
+            // 오븐: 창 너머 반죽이 게이지만큼 노릇하게(지나치면 검게) 익어간다
+            const ovenCY = (lane.topY + lane.mouthY) / 2 + 10;
+            const doneness = order.gauge;
+            const overZone = doneness > order.zone[1];
+            const r2 = Math.round(236 - doneness * 120 - (overZone ? 60 : 0));
+            const g2 = Math.round(207 - doneness * 130 - (overZone ? 50 : 0));
+            const b2 = Math.round(160 - doneness * 120 - (overZone ? 20 : 0));
             ctx.save();
+            // 오븐 창 안쪽 어둠 + 달아오른 빛
             ctx.globalCompositeOperation = "screen";
-            const heat = ctx.createRadialGradient(lane.x, (lane.topY + lane.mouthY) / 2 + 8, 4, lane.x, (lane.topY + lane.mouthY) / 2 + 8, 60);
-            heat.addColorStop(0, `rgba(255, ${170 - order.gauge * 80}, 60, ${0.25 + order.gauge * 0.5})`);
+            const heat = ctx.createRadialGradient(lane.x, ovenCY, 4, lane.x, ovenCY, 56);
+            heat.addColorStop(0, `rgba(255, ${170 - doneness * 90}, 50, ${0.2 + doneness * 0.5})`);
             heat.addColorStop(1, "transparent");
             ctx.fillStyle = heat;
-            ctx.fillRect(lane.x - 60, lane.topY - 20, 120, lane.mouthY - lane.topY + 80);
+            ctx.fillRect(lane.x - 56, ovenCY - 56, 112, 112);
             ctx.restore();
+            // 반죽 — 부풀며 색이 변한다
+            ctx.fillStyle = `rgb(${r2}, ${g2}, ${b2})`;
+            ctx.strokeStyle = "rgba(90, 50, 16, .8)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(lane.x + 2, ovenCY, 13 + doneness * 3, 9 + doneness * 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
           }
         }
       }
@@ -1135,51 +1198,109 @@ export class KitchenRush extends ArcadeShell {
           ctx.quadraticCurveTo(ix2 + k * 7 + Math.sin(this.time * 4 + k) * 4, iy2 - 22, ix2 + k * 7, iy2 - 30);
           ctx.stroke();
         }
-      } else if (fx.type === "burnt") {
-        // 탄 결과물 + 연기
-        ctx.fillStyle = "#3a2c22";
-        ctx.strokeStyle = "#1e1610";
+      } else if (fx.type === "cold") {
+        // 식은 주문 — 주문 카드가 툭 떨어지며 사라진다
+        const fall = progress * progress * 60;
+        ctx.globalAlpha = 1 - progress;
+        ctx.translate(lane.x, lane.topY - 44 + fall);
+        ctx.rotate(progress * 0.5);
+        ctx.fillStyle = "#e3d8c2";
+        ctx.strokeStyle = "rgba(20,14,8,.4)";
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.ellipse(ix2, lane.mouthY - 4, 13, 9, 0, 0, Math.PI * 2);
+        roundRect(ctx, -40, -14, 80, 28, 5);
         ctx.fill();
         ctx.stroke();
-        for (let k = 0; k < 3; k += 1) {
-          const sp = Math.min(1, (fx.t * 1.4 + k * 0.2) % 1);
-          ctx.globalAlpha = (1 - sp) * 0.55;
-          ctx.fillStyle = "#5a544c";
-          ctx.beginPath();
-          ctx.arc(ix2 + Math.sin(sp * 5 + k * 2) * 7, lane.mouthY - 14 - sp * 40, 4 + sp * 7, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else {
-        // 설익은 결과물 (창백)
-        ctx.globalAlpha = 1 - progress * 0.6;
-        ctx.fillStyle = "#e9ddc4";
-        ctx.strokeStyle = "#b8a888";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.ellipse(ix2, lane.mouthY - 4 - rise * 0.3, 13, 9, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+        ctx.fillStyle = "#8a8074";
+        ctx.font = "700 11px 'NeoDunggeunmo', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(fx.menu.name, 0, 4);
       }
       ctx.restore();
     }
 
-    // 사장 — 이동 방향을 보고, 홀드 중엔 장비에 몸을 기울인다
+    // ── 연기 기둥 — 탄 것은 검게 뭉게뭉게, 식은 것은 회색 한 줄기 ──
+    for (const fx of this.smokeFx) {
+      const life = fx.t / fx.dur;
+      const count = fx.big ? 7 : 3;
+      for (let k = 0; k < count; k += 1) {
+        const sp = (life * 1.6 + k * (1 / count)) % 1;
+        const size = (fx.big ? 7 : 4) + sp * (fx.big ? 15 : 8);
+        ctx.globalAlpha = (1 - sp) * (fx.dark ? 0.6 : 0.35) * Math.min(1, (fx.dur - fx.t) * 2);
+        ctx.fillStyle = fx.dark ? "#2c2620" : "#a8a29a";
+        ctx.beginPath();
+        ctx.arc(fx.x + Math.sin(sp * 6 + k * 1.7) * (6 + sp * 12), fx.y - sp * (fx.big ? 110 : 60), size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // 사장 — 장비 옆에 서서 작업한다 (잔·추출이 가려지지 않게), 홀드 중엔 장비 쪽을 본다
     const holdingNow = !!this.lanes[this.slot].order?.holding;
-    const px = this.lanes[this.slot].x;
-    const py = this.H * 0.76;
+    const px = this.lanes[this.slot].x + 46;
+    const py = this.H * 0.78;
     paintPerson(ctx, {
       x: px, y: py, scale: 1.25,
       body: this.sim.ownerLook?.color ?? "#23241f",
       hair: this.sim.ownerLook?.hair, face: "🧑‍🍳", prop: "🥄",
       time: this.time * (holdingNow || this.workPulse > 0 ? 2.2 : 1),
       walk: holdingNow || this.workPulse > 0 ? 1 : 0,
-      facing: this.playerFacing,
+      facing: holdingNow ? -1 : this.playerFacing,
       glow: "rgba(217,164,65,.5)",
     });
     if (this.playerReact) drawBadge(ctx, px + 26, py - 150, this.playerReact.type, this.playerReact.t, this.playerReact.max);
+
+    // 실패작을 들어 올려 보여준다 — 설익은 건 창백하게 처지고, 탄 건 연기가 피어오른다
+    if (this.playerHold) {
+      const hold = this.playerHold;
+      const holdT = 1 - hold.t / hold.max;
+      const lift = Math.min(1, holdT * 4);
+      const hx = px + 24 * this.playerFacing;
+      const hy = py - 96 - lift * 22;
+      ctx.save();
+      if (hold.kind === "burnt") {
+        ctx.fillStyle = "#33271d";
+        ctx.strokeStyle = "#191009";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(hx, hy, 14, 10, -0.12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        // 갈라진 틈
+        ctx.strokeStyle = "rgba(230, 130, 60, .7)";
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(hx - 6, hy - 2);
+        ctx.lineTo(hx - 1, hy + 2);
+        ctx.lineTo(hx + 5, hy - 3);
+        ctx.stroke();
+        // 손에 든 것에서 피어오르는 잔연기
+        for (let k = 0; k < 2; k += 1) {
+          const sp = (this.time * 0.9 + k * 0.5) % 1;
+          ctx.globalAlpha = (1 - sp) * 0.5;
+          ctx.fillStyle = "#4a443c";
+          ctx.beginPath();
+          ctx.arc(hx + Math.sin(sp * 6 + k * 3) * 5, hy - 12 - sp * 26, 3 + sp * 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // 설익음 — 창백하고 축 처진 반죽/묽은 잔
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = "#ece0c6";
+        ctx.strokeStyle = "#b8a888";
+        ctx.lineWidth = 2;
+        const sag = Math.sin(this.time * 3) * 1.5;
+        ctx.beginPath();
+        ctx.ellipse(hx, hy + 2 + sag, 15, 7.5, 0.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        // 흘러내리는 물방울
+        ctx.fillStyle = "rgba(190, 175, 140, .8)";
+        ctx.beginPath();
+        ctx.ellipse(hx + 8, hy + 10 + ((this.time * 18) % 12), 1.8, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
   }
 
   hudText() { return `${this.stats.made}개 완성 · ${this.stats.missed} 놓침`; }
