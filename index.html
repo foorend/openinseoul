@@ -20,6 +20,11 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <div id="mobile-hint" class="mobile-hint" hidden>
+      <span class="mobile-hint__icon" aria-hidden="true">⌨️</span>
+      <span class="mobile-hint__text">미니게임은 키보드가 필요합니다. <b>PC/노트북</b>에서 열면 홀·주방·전단 미니게임을 방향키·QWER로 뜁니다.</span>
+      <button type="button" class="mobile-hint__close" id="mobile-hint-close" aria-label="배너 닫기">✕</button>
+    </div>
     <div id="app" class="app-shell">
       <header class="topbar">
         <button class="brand-lockup" id="brand-home" type="button" aria-label="첫 화면으로">
@@ -62,6 +67,21 @@
       <p class="legal-note">본 게임의 상권과 수치는 공공자료의 구조를 참고해 게임용으로 재구성한 가상 데이터이며 투자 조언이 아닙니다.</p>
     </dialog>
 
+    <script>
+      // 모바일 접속 배너 — 미니게임 키보드 요구 사실을 첫 화면에서 알린다
+      (function () {
+        var hint = document.getElementById("mobile-hint");
+        if (!hint) return;
+        var isMobile = window.matchMedia("(max-width: 900px)").matches || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        var dismissed = false;
+        try { dismissed = sessionStorage.getItem("ois-mobile-hint-dismissed") === "1"; } catch (e) {}
+        if (isMobile && !dismissed) hint.hidden = false;
+        document.getElementById("mobile-hint-close")?.addEventListener("click", function () {
+          hint.hidden = true;
+          try { sessionStorage.setItem("ois-mobile-hint-dismissed", "1"); } catch (e) {}
+        });
+      })();
+    </script>
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>

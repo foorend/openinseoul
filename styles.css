@@ -2926,3 +2926,40 @@ canvas { image-rendering: pixelated; }
   object-fit: cover;
   object-position: center 30%;
 }
+
+/* ═══ 모바일 접속 배너 — 미니게임은 키보드가 필요하다는 사실을 즉시 알린다 ═══ */
+.mobile-hint {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  padding: 10px 44px 10px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--ground-deep);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 6px 14px -8px rgba(0, 0, 0, 0.6);
+  gap: 8px;
+  align-items: center;
+}
+.mobile-hint b { color: var(--crema); }
+.mobile-hint__icon { font-size: 18px; }
+.mobile-hint__close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 16px;
+  cursor: pointer;
+}
+@media (max-width: 900px) {
+  .mobile-hint:not([hidden]) { display: flex; }
+  .app-shell { padding-top: 68px; }
+}
