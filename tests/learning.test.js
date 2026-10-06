@@ -1,0 +1,41 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { classCode, scoreQuiz, validateLearning, mergeLearning, learningStats, learningCsv } from "../src/learning.js";
+import { DATA_VERSION, DISTRICTS, FORMATS } from "../src/data.js";
+
+test("anonymous learning results validate, deduplicate and separate knowledge from confidence", () => {
+  const uuid = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
+  const pre = scoreQuiz([2, 0, 2], 4), post = scoreQuiz([0, 1, 2], 3);
+  const initial = { schema: 1, version: DATA_VERSION, runId: uuid(1), participantId: uuid(2), classCode: "cafe01", goal: "profit", district: DISTRICTS[0].id, format: FORMATS[0].id,
+    startingCapital: 15000, months: 0, completed: false, updatedAt: 1, ownerHours: 0, comparisons: 0, sources: [], pre, post: null, name: "DO NOT EXPORT", email: "private@test.invalid" };
+  const complete = { ...initial, months: 12, completed: true, updatedAt: 2, ownerHours: 1200, comparisons: 3, sources: ["dictionary"], post, netProfit: -100, hourlyWon: -833, cash: 4000 };
+  const replay = { ...complete, runId: uuid(3), updatedAt: 3, hourlyWon: 1200 };
+  const incomplete = { ...initial, runId: uuid(4), participantId: uuid(5) };
+  const rows = mergeLearning([], [initial, complete, replay, incomplete, complete]);
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].classCode, "CAFE01");
+  assert.equal(rows[0].name, undefined);
+  assert.equal(rows[0].email, undefined);
+  assert.equal(rows[0].units.netProfit, "만원");
+  assert.equal(mergeLearning(rows, [initial])[0].completed, true);
+  const stats = learningStats(rows);
+  assert.equal(stats.participants, 2);
+  assert.equal(stats.completions, 1);
+  assert.equal(stats.replays, 1);
+  assert.equal(stats.quizGain, 2);
+  assert.equal(stats.confidenceGain, -1);
+  assert.equal(stats.replayGain, 2033);
+  assert.equal(stats.comparisons, 6);
+  assert.equal(learningStats([validateLearning(initial)]).quizGain, null);
+  assert.equal(learningStats([]).hourlyWon, null);
+  for (const patch of [{ version: "old" }, { startingCapital: 100 }, { sources: ["fake"] }, { hourlyWon: NaN }, { months: 11 }, { ownerHours: -1 }, { pre: { answers: ["0", 1, 2], confidence: 3 } }]) assert.throws(() => validateLearning({ ...complete, ...patch }));
+  assert.throws(() => classCode("user@example.com"));
+  assert.throws(() => scoreQuiz([0, 1, 2], 0));
+  assert.equal(validateLearning({ ...complete, pre: { ...pre, score: 999 } }).pre.score, 1);
+  const csv = learningCsv([{ ...complete, classCode: "-CAFE" }]);
+  assert(csv.startsWith("\uFEFF"));
+  assert(csv.includes("netProfitManwon"));
+  assert(csv.includes('"\'-CAFE"'));
+  assert(csv.includes('"-100"'));
+  assert(!csv.includes("DO NOT EXPORT"));
+});

@@ -41,8 +41,10 @@ function readStore() {
 function writeStore(data) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    return true;
   } catch {
     /* 시크릿 모드 등 저장 불가 환경에서도 게임은 그대로 돌아가야 한다 */
+    return false;
   }
 }
 
@@ -70,7 +72,8 @@ const localProvider = {
     const store = readStore();
     store.boards = store.boards ?? {};
     const board = store.boards[boardId] ?? [];
-    board.push({ ...entry, at: entry.at ?? 0 });
+    const existing = board.findIndex((row) => row.at === entry.at);
+    if (existing >= 0) board[existing] = { ...entry }; else board.push({ ...entry, at: entry.at ?? 0 });
     board.sort((a, b) => b.score - a.score);
     store.boards[boardId] = board.slice(0, 50);
     writeStore(store);
@@ -148,6 +151,23 @@ export const platform = {
   unlockAchievement: (...args) => provider.unlockAchievement(...args),
   getAchievements: (...args) => provider.getAchievements(...args),
   logEvent: (...args) => provider.logEvent(...args),
+  readSession: () => readStore().session ?? null,
+  saveSession(session) {
+    const store = readStore();
+    store.session = session;
+    return writeStore(store);
+  },
+  clearSession() {
+    const store = readStore();
+    delete store.session;
+    return writeStore(store);
+  },
+  readLearning: () => { const rows = readStore().learning; return Array.isArray(rows) ? rows : []; },
+  saveLearning(row) {
+    const store = readStore();
+    store.learning = [...(Array.isArray(store.learning) ? store.learning : []).filter((item) => item?.runId !== row.runId), row].slice(-100);
+    return writeStore(store);
+  },
 };
 
 // 7일 결산 점수 — 순이익과 사장 시급을 함께 반영한다.

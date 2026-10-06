@@ -15,8 +15,8 @@ import {
   MONTHS,
   SEASON_OVERRIDES,
   getById,
-} from "./data.js";
-import { RestaurantSimulation } from "./sim.js";
+} from "./data.js?release=20261006";
+import { RestaurantSimulation } from "./sim.js?release=20261006";
 
 export function monthInfo(monthNumber) {
   return MONTHS[(monthNumber - 1) % 12];
@@ -48,6 +48,7 @@ export function buildMonthSummary({
   weekendReport,
   businessTypeId = "sole",
   loanAmount = 0,
+  oneOff = { expense: 0, investment: 0, entries: [] },
 }) {
   const info = monthInfo(monthNumber);
   const season = seasonFactor(monthNumber, districtId);
@@ -88,13 +89,15 @@ export function buildMonthSummary({
   const keeping = business.annualKeeping / 12;
   const interest = loanAmount * LOAN_ANNUAL_RATE / 12;   // 대출 이자 — 매달 꼬박꼬박
   const delivery = sum("platform");                    // 배달 중개·결제 수수료
-  const waste = sum("waste") + sum("action");
+  const waste = sum("waste");
+  const action = sum("action");
+  const oneOffExpense = oneOff.expense ?? 0;
   const food = sum("food");
-  const rent = sum("rent");
+  const rent = weekdayReport.metrics.rentCost * 30; // 계약 월세는 달의 일수와 무관한 고정비
   const utility = sum("utility");
 
   const monthlyOnly = severance + insurance + cardFee + supplies + keeping + interest;
-  const totalCost = food + labor + severance + insurance + rent + utility + cardFee + supplies + delivery + waste + keeping + interest;
+  const totalCost = food + labor + severance + insurance + rent + utility + cardFee + supplies + delivery + waste + action + keeping + interest + oneOffExpense;
   const profit = netRevenue - totalCost;
 
   // 실매출 대비 비중 — 창업 상담에서 제일 먼저 보는 숫자들
@@ -120,7 +123,7 @@ export function buildMonthSummary({
     loanAmount,
     costs: {
       food, labor, severance, insurance, rent, utility,
-      cardFee, supplies, delivery, waste, keeping, interest, vat,
+      cardFee, supplies, delivery, waste, action, oneOffExpense, keeping, interest, vat,
     },
     shares: {
       food: share(food),
@@ -137,6 +140,9 @@ export function buildMonthSummary({
     monthlyOnly,
     totalCost,
     profit,
+    oneOff: structuredClone(oneOff),
+    investmentOutflow: oneOff.investment ?? 0,
+    cashChange: profit - (oneOff.investment ?? 0),
     weekdayProfit: weekdayReport.metrics.profit,
     weekendProfit: weekendReport.metrics.profit,
   };
@@ -163,7 +169,8 @@ export function yearEndSettlement({ months, businessTypeId = "sole", ownerHours 
   const chosen = businessTypeId === "corp" ? corp : sole;
   const alternative = businessTypeId === "corp" ? sole : corp;
 
-  const netProfit = operatingProfit - chosen.tax - business.setupCost;
+  // 설립비는 개업 원장에서 지급했다. 운영 손익에서 다시 빼지 않는다.
+  const netProfit = operatingProfit - chosen.tax;
   const hourlyWon = ownerHours > 0 ? Math.round((netProfit * 10000) / ownerHours) : 0;
 
   return {
@@ -198,10 +205,10 @@ export function yearGrade(settlement, minimumWage) {
 
 export function yearVerdict(grade) {
   return {
-    S: "최저시급의 두 배를 넘겼습니다. 2호점을 이야기할 자격이 생겼습니다.",
-    A: "최저시급을 넘겼습니다. 1년을 버텨 사업이 됐습니다.",
-    B: "흑자지만 시급은 최저시급 아래입니다. 당신의 1년이 반값에 팔렸습니다.",
-    C: "돈은 남았지만 당신의 시간값은 거의 0입니다. 이게 창업의 가장 흔한 결말입니다.",
-    D: "1년을 일하고 돈을 냈습니다. 그리고 이건 드문 일이 아닙니다.",
+    S: "이 게임의 시간당 세후 수익이 2026 최저임금의 두 배 이상입니다.",
+    A: "이 게임의 시간당 세후 수익이 2026 최저임금 이상입니다.",
+    B: "흑자지만 시간당 세후 수익은 2026 최저임금의 절반 이상, 최저임금 미만입니다.",
+    C: "흑자지만 시간당 세후 수익은 2026 최저임금의 절반 미만입니다.",
+    D: "이 시나리오의 세후 순이익이 0원 이하입니다. 비용과 수요를 다시 비교하세요.",
   }[grade];
 }

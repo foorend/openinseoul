@@ -3,6 +3,7 @@ import {
   BEAN_TIERS,
   CUSTOMERS,
   DAY_NAMES,
+  DATA_VERSION,
   DISTRICTS,
   FORMATS,
   BUSINESS_TYPES,
@@ -34,14 +35,18 @@ import {
   MENUS,
   OWNER_ROLES,
   getById,
-} from "./data.js";
-import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost } from "./sim.js";
-import { GameScene, HeroScene } from "./scene.js";
-import { mountIllustration } from "./visuals.js";
-import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js";
-import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js";
-import { Tutorial } from "./tutorial.js";
-import { ARCADE_BY_STATION, FlyerRun } from "./arcade.js";
+} from "./data.js?release=20261006";
+import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost } from "./sim.js?release=20261006";
+import { GameScene, HeroScene } from "./scene.js?release=20261006";
+import { mountIllustration } from "./visuals.js?release=20261006";
+import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261006";
+import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261006";
+import { Tutorial } from "./tutorial.js?release=20261006";
+import { ARCADE_BY_STATION, FlyerRun } from "./arcade.js?release=20261006";
+import { compareCondition } from "./experiment.js?release=20261006";
+import { sourceMarkup } from "./sources.js?release=20261006";
+import { buildCoach, narrateCoach } from "./coach.js?release=20261006";
+import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261006";
 
 const screen = document.querySelector("#screen");
 const topbarStatus = document.querySelector("#topbar-status");
@@ -88,6 +93,10 @@ const state = {
   lastRemaining: null,
   loanUnits: 0,
   pageStart: null,
+  quickSetup: true,
+  managementOnly: true,
+  campaignMode: "chapters",
+  learning: null,
 };
 
 let heroScene = null;
@@ -96,6 +105,39 @@ let illustrationDisposers = [];
 let operationRaf = null;
 let lastFrame = 0;
 let reportReadyNotified = false;
+const SESSION_FIELDS = ["view", "step", "selectedDistrictId", "districtId", "formatId", "menuIds", "beanTierId", "ownerRoleId", "supplyModeId", "hourPlanId", "businessTypeId", "campaign", "reports", "selectedActions", "tutorialShown", "staffingId", "restaurantName", "setupCash", "ownerLookId", "ownerHairId", "ownerStats", "capitalId", "equipmentId", "researchBought", "everFired", "bakeryGearBought", "loanUnits", "pendingExperiment", "quickSetup", "managementOnly", "campaignMode", "learning"];
+
+function saveProgress() {
+  if (state.view === "landing" || state.arcadeOpen || state.tutorial) return false;
+  const saved = { version: DATA_VERSION, at: Date.now(), state: Object.fromEntries(SESSION_FIELDS.map((key) => [key, state[key]])), simulation: state.simulation?.exportState() ?? null };
+  recordLearning();
+  return platform.saveSession(saved);
+}
+
+function restoreProgress() {
+  const saved = platform.readSession();
+  try {
+    if (saved?.version !== DATA_VERSION || !saved.state || !["wizard", "brief", "operations", "report", "monthClose", "monthPlan", "final"].includes(saved.state.view)) throw new Error("저장 버전이 다르거나 기록이 손상되었습니다");
+    const simulation = saved.simulation ? RestaurantSimulation.fromState(saved.simulation) : null;
+    if (saved.state.view !== "wizard" && !simulation) throw new Error("영업 기록이 없습니다");
+    for (const key of SESSION_FIELDS) if (Object.hasOwn(saved.state, key)) state[key] = saved.state[key];
+    state.simulation = simulation;
+    state.arcadeOpen = false;
+    state.pendingArcade = null;
+    state.tutorialShown = !!simulation || state.tutorialShown;
+    simulation?.setSpeed(0);
+    setView(state.view);
+    toast("저장 기록을 복원했습니다. 영업 시계는 일시정지 상태입니다.");
+  } catch (error) { toast(error.message); }
+}
+
+const saveButton = document.createElement("button");
+saveButton.className = "icon-button";
+saveButton.textContent = "저장";
+saveButton.addEventListener("click", () => toast(saveProgress() ? "진행을 저장했습니다" : "저장하지 못했습니다. 미니게임·안내를 끝내거나 저장 공간을 확인하세요."));
+document.querySelector(".topbar-actions").prepend(saveButton);
+setInterval(() => saveProgress(), 5000);
+window.addEventListener("pagehide", () => saveProgress());
 
 class SoundManager {
   constructor() {
@@ -177,7 +219,8 @@ function setView(view) {
   stopAnimatedViews();
   state.view = view;
   render();
-  requestAnimationFrame(() => screen.focus({ preventScroll: true }));
+  saveProgress();
+  requestAnimationFrame(() => { window.scrollTo(0, 0); screen.focus({ preventScroll: true }); });
 }
 
 function resetGame() {
@@ -193,6 +236,7 @@ function resetGame() {
     ownerRoleId: null,
     supplyModeId: null,
     hourPlanId: "standard",
+    staffingId: "full",
     businessTypeId: "sole",
     campaign: null,
     simulation: null,
@@ -207,9 +251,16 @@ function resetGame() {
     equipmentId: null,
     researchBought: [],
     lastRemaining: null,
-  loanUnits: 0,
-  pageStart: null,
+    loanUnits: 0,
+    pageStart: null,
+    everFired: false,
+    bakeryGearBought: false,
+    pendingExperiment: null,
     lastSpendLines: null,
+    quickSetup: true,
+    managementOnly: true,
+    campaignMode: "chapters",
+    tutorialShown: false,
   });
   render();
 }
@@ -220,20 +271,9 @@ function resetGame() {
 // 리포트류: 글씨가 우선, 스크롤 허용(최대 6%만 축소).
 // 창업준비/브리핑: 다음 버튼이 늘 보여야 하므로 한 화면에 담되 덜 줄인다(최대 18%).
 // 운영(미니게임): 조작을 위해 한 화면(최대 22%).
-const FIT_FLOOR = {
-  report: 0.94, monthClose: 0.94, monthPlan: 0.94, final: 0.94,
-  landing: 0.94, wizard: 0.82, brief: 0.82, operations: 0.78,
-};
-
 function fitScreenToViewport() {
+  // 글씨를 축소하지 않는다. 작은 화면에서는 자연스럽게 스크롤한다.
   screen.style.zoom = "";
-  const chrome = 62 + 30 + 4; // 상단바 + 하단 스트립 + 여유
-  const available = window.innerHeight - chrome;
-  const content = screen.scrollHeight;
-  if (content > available + 2) {
-    const floor = FIT_FLOOR[state.view] ?? 0.82;
-    screen.style.zoom = String(Math.max(floor, available / content));
-  }
 }
 
 window.addEventListener("resize", () => fitScreenToViewport());
@@ -247,11 +287,14 @@ function render() {
   else if (state.view === "monthClose") renderMonthClose();
   else if (state.view === "monthPlan") renderImprovements();
   else if (state.view === "final") renderYearEnd();
+  if (state.learning && state.view !== "landing") screen.querySelector("section")?.insertAdjacentHTML("afterbegin", `<div class="source-strip">익명 수업 ${escapeHtml(state.learning.classCode)} · 공통 자본 1억 5천만원 · ${state.learning.goal === "hours" ? "사장 노동시간 비교" : "현금과 손익 구분"} <button class="text-button learning-open" type="button">교육 결과 저장</button></div>`);
+  if (["wizard", "brief", "report", "monthClose", "monthPlan", "final"].includes(state.view)) screen.querySelector("section")?.insertAdjacentHTML("afterbegin", `<div class="source-strip">합성 상권 · 최저임금위 2026 / 국세청 기본세율 참고 <button class="text-button source-toggle" type="button">가정·원문·버전 확인</button></div>`);
   // 렌더 직후 두 프레임 뒤(폰트·캔버스 마운트 반영 후)에 화면을 맞춘다
   requestAnimationFrame(() => requestAnimationFrame(fitScreenToViewport));
 }
 
 function renderLanding() {
+  const saved = platform.readSession();
   topbarStatus.innerHTML = "";
   screen.innerHTML = `
     <section class="hero-screen enter-up">
@@ -261,9 +304,13 @@ function renderLanding() {
           <h1>OPEN<br />IN <em>SEOUL</em><small class="hero-cafe-tag">: CAFE</small></h1>
           <p class="hero-subtitle">나도 서울에서<br /><em>카페 하나 차려보려고~</em></p>
 
+          ${saved?.version === DATA_VERSION ? `<button class="secondary-button" id="continue-game" type="button">${saved.state?.campaign ? `${saved.state.campaign.month}월` : "개업 준비"} 이어 하기 · ${escapeHtml(saved.state?.restaurantName ?? "저장 기록")}</button>` : ""}
+          ${saved && saved.version !== DATA_VERSION ? `<p class="setup-note">계산 기준이 갱신되어 이전 버전은 이어 할 수 없습니다. 새 게임을 시작하면 저장이 교체됩니다. <button class="text-button" id="export-old-save" type="button">이전 기록 JSON 보관</button></p>` : ""}
           <div class="hero-cta-row is-primary">
-            <button class="primary-button is-hero is-mega" id="start-game" type="button"><span>카페 차리러 가기</span><span aria-hidden="true">→</span></button>
+            <button class="primary-button is-hero is-mega" id="start-game" aria-label="3가지 결정으로 개업하기" type="button"><span>3가지 결정으로 개업하기</span><span aria-hidden="true">→</span></button>
           </div>
+          <button class="text-button" id="advanced-setup" type="button">원두·집기·메뉴까지 직접 설계하기</button>
+          <p><button class="text-button learning-open" type="button">${state.learning ? `${escapeHtml(state.learning.classCode)} 수업 참여 중 · 결과 저장` : "익명 수업·파일럿 참여"}</button> · <a class="text-button" href="./education.html" target="_blank" rel="noopener">강사용 결과 도구</a></p>
 
           <p class="hero-subcopy">강남·을지로·성수·신촌·강동.<br />자본 규모부터 상권까지 직접 정하는<br /><em>현실적인 서울에서 카페 차리기 대작전!</em></p>
         </div>
@@ -286,13 +333,35 @@ function renderLanding() {
   `;
   document.querySelector("#start-game").addEventListener("click", () => {
     sounds.click();
-    state.step = 0;
+    resetGame();
+    state.quickSetup = true;
+    state.ownerStats = { kind: 3, smart: 3, charm: 3 };
+    state.beanTierId = "standard";
+    state.equipmentId = "standard";
+    state.ownerRoleId = "peak";
+    state.supplyModeId = "bake";
     state.pageStart = null;
     recordPageStart();
     setView("wizard");
   });
+  document.querySelector("#advanced-setup").addEventListener("click", () => {
+    resetGame();
+    state.quickSetup = false;
+    state.campaignMode = "full";
+    recordPageStart();
+    setView("wizard");
+  });
   heroScene = new HeroScene(document.querySelector("#hero-canvas"));
+  document.querySelector("#continue-game")?.addEventListener("click", restoreProgress);
+  document.querySelector("#export-old-save")?.addEventListener("click", () => downloadFile("open-in-seoul-previous-save.json", JSON.stringify(saved, null, 2), "application/json"));
   heroScene.start();
+}
+
+function downloadFile(name, content, type) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement("a");
+  link.href = url; link.download = name; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function sparklineSvg(values, color) {
@@ -362,7 +431,7 @@ const WIZARD_STEPS = [
   {
     id: "business", label: "사업자", kicker: "07 / REGISTER THE BUSINESS",
     title: "개인입니까,", accent: "법인입니까.",
-    lede: "1년 뒤 연말정산에서 갈립니다. 개인은 누진세 최대 45%, 법인은 2억까지 9% 평평 — 대신 매년 기장료가 나갑니다.",
+    lede: "기본세율 비교 연습입니다. 일반 영리법인 2026 기본세율을 참고하며 실제 공제·소규모법인 별도 세율 등은 반영하지 않습니다.",
   },
 ];
 
@@ -385,7 +454,8 @@ function setupCosts() {
   // 베이커리라면 디저트 조달 방식이 집기 비용을 정한다 — 직접 굽기는 오븐·발효기, 납품은 쇼케이스
   const supplyMode = state.formatId === "bakery_cafe" ? getById(SUPPLY_MODES, state.supplyModeId) : null;
   const supplyGear = supplyMode?.gearCost ?? 0;
-  const total = lease + formatCost + equipmentCost + beanStock + researchSpend + checklist + supplyGear;
+  const businessSetup = getById(BUSINESS_TYPES, state.businessTypeId)?.setupCost ?? 0;
+  const total = lease + formatCost + equipmentCost + beanStock + researchSpend + checklist + supplyGear + businessSetup;
   const baseCapital = getById(CAPITAL_OPTIONS, state.capitalId)?.amount ?? GAME_CONFIG.startingCash;
   const loan = (state.loanUnits ?? 0) * LOAN_UNIT;
   const capital = baseCapital + loan;
@@ -400,6 +470,7 @@ function setupCosts() {
       beanStock ? { label: "원두·부자재 선매입", value: beanStock } : null,
       researchSpend ? { label: `상권 분석 ${state.researchBought.length}부`, value: researchSpend } : null,
       checklist ? { label: "개업 행정·보험", value: checklist } : null,
+      businessSetup ? { label: "사업자 설립", value: businessSetup } : null,
     ].filter(Boolean),
   };
 }
@@ -421,10 +492,16 @@ function restaurantNameFor(menu) {
 
 // 베이커리를 고르지 않았다면 조달 스텝은 아예 나타나지 않는다.
 function activeSteps() {
+  if (state.quickSetup) return [
+    { id: "capital", label: "자본·내 시간", kicker: "01 / YOUR LIMITS", title: "얼마를 걸고,", accent: "얼마나 일할까요?", lede: "돈과 사장의 시간은 서로 바꿀 수 있습니다. 먼저 감당할 범위를 정하세요." },
+    WIZARD_STEPS.find((step) => step.id === "district"),
+    WIZARD_STEPS.find((step) => step.id === "format"),
+  ];
   return WIZARD_STEPS.filter((step) => !step.onlyBakery || state.formatId === "bakery_cafe");
 }
 
 function stepComplete(stepId) {
+  if (stepId === "capital") return !!state.capitalId && !!state.ownerRoleId;
   if (stepId === "owner") {
     const spent = state.ownerStats.kind + state.ownerStats.smart + state.ownerStats.charm;
     return !!state.ownerLookId && !!state.capitalId && spent === OWNER_STAT_POOL;
@@ -524,7 +601,7 @@ function districtStepMarkup() {
           <p class="detail-desc">${selected.description}</p>
           <div class="chip-row">${selected.tags.map((tag) => `<span class="chip">${tag}</span>`).join("")}</div>
           <div class="research-block">
-            <span class="label">이 동네 숫자</span>
+            <span class="label">합성 상권 시나리오 · 실제 시세 아님</span><button class="text-button source-toggle" type="button">FOOREND 가정 · 출처/기준 보기</button>
             ${state.researchBought.includes(selected.id)
               ? Object.entries(selected.research).map(([key, insight]) => `
                 <div class="research-row is-open">
@@ -538,11 +615,11 @@ function districtStepMarkup() {
                 </div>`).join("")}
               <button class="research-buy" id="buy-research" type="button">
                 <b>📊 상권 분석 리포트 구매 — ${formatMoney(RESEARCH_COST)}</b>
-                <span>부동산 시세 · 동종업계 매출 · 시급 시세. 발품 대신 돈으로 삽니다.</span>
+                <span>임대·매출·시급의 합성 힌트. 실제 조사 자료 구매가 아닌 게임 선택입니다.</span>
               </button>`}
           </div>
           <div class="lease-sheet">
-            <span class="lease-note">12평 기준 시세 — 실제 금액은 평수를 정하는 순간 계약됩니다</span>
+            <span class="lease-note">12평 기준 게임 계약 가정 — 평수 비례 환산</span>
             <div><span>보증금</span><b>${formatMoney(lease.deposit)}</b></div>
             <div><span>권리금</span><b>${formatMoney(lease.keyMoney)}</b></div>
             <div><span>월세</span><b>${formatMoney(lease.monthlyRent)}</b></div>
@@ -582,7 +659,11 @@ function renderWizard() {
 
   let body = "";
   let lockedChoices = false;  // 이 페이지에 자본 부족으로 잠긴 카드가 있나 — 있으면 대출 버튼을 연다
-  if (step.id === "owner") {
+  if (step.id === "capital") {
+    body = `<div class="quick-grid"><section><h2>시작 자본</h2><div class="capital-list">${CAPITAL_OPTIONS.map((option) => `<button class="repday ${state.capitalId === option.id ? "is-selected" : ""}" data-capital="${option.id}" type="button" ${state.learning && option.id !== "standard" ? "disabled" : ""}><b>${option.name} · ${formatMoney(option.amount)}</b><span>${option.description}</span></button>`).join("")}</div></section>
+      <section><h2>사장 근무 예산</h2><div class="capital-list">${OWNER_ROLES.map((role) => `<button class="repday ${state.ownerRoleId === role.id ? "is-selected" : ""}" data-role="${role.id}" type="button"><b>하루 ${role.hoursPerDay}시간 · ${role.name}</b><span>${role.description}</span></button>`).join("")}</div></section></div>
+      <div class="setup-note"><p>표준 원두·신품 집기·개인사업자로 시작합니다. 메뉴는 매장 유형에 맞춰 제안하고, 다음 경영 계획에서 바꿀 수 있습니다. 성격 스탯은 모두 동일하게 3입니다.</p><label>플레이 방식 <select id="campaign-mode"><option value="chapters" ${state.campaignMode === "chapters" ? "selected" : ""}>3챕터 · 1/4/9월에 결정, 나머지 달 자동 정산</option><option value="full" ${state.campaignMode === "full" ? "selected" : ""}>12개월 · 매달 직접 결정</option></select></label></div>`;
+  } else if (step.id === "owner") {
     const spent = state.ownerStats.kind + state.ownerStats.smart + state.ownerStats.charm;
     const remaining = OWNER_STAT_POOL - spent;
     body = `
@@ -628,7 +709,7 @@ function renderWizard() {
           <span class="meta-label">시작 자본</span>
           <div class="capital-list">
             ${CAPITAL_OPTIONS.map((option) => `
-              <button class="repday ${state.capitalId === option.id ? "is-selected" : ""}" data-capital="${option.id}" type="button">
+              <button class="repday ${state.capitalId === option.id ? "is-selected" : ""}" data-capital="${option.id}" type="button" ${state.learning && option.id !== "standard" ? "disabled" : ""}>
                 <b>${option.icon} ${option.name} — ${formatMoney(option.amount, true)}</b><span>${option.description}</span>
               </button>`).join("")}
           </div>
@@ -662,7 +743,9 @@ function renderWizard() {
       const currentCost = state.formatId
         ? (() => { const cur = getById(FORMATS, state.formatId); const curFactor = (cur.pyeong ?? LEASE_BASE_PYEONG) / LEASE_BASE_PYEONG; return (leaseDistrict ? Math.round((leaseDistrict.lease.deposit + leaseDistrict.lease.keyMoney + leaseDistrict.lease.fitout) * curFactor) : 0) + cur.setupCost; })()
         : 0;
-      const wouldRemain = costs.remaining + currentCost - (leaseHere + format.setupCost);
+      const currentSupply = state.quickSetup && state.formatId === "bakery_cafe" ? getById(SUPPLY_MODES, "bake").gearCost : 0;
+      const nextSupply = state.quickSetup && format.id === "bakery_cafe" ? getById(SUPPLY_MODES, "bake").gearCost : 0;
+      const wouldRemain = costs.remaining + currentCost + currentSupply - (leaseHere + format.setupCost + nextSupply);
       const unaffordable = wouldRemain < 0;
       if (unaffordable) lockedChoices = true;
       return choiceCard({
@@ -676,7 +759,7 @@ function renderWizard() {
         selected: state.formatId === format.id,
         disabled: unaffordable,
       });
-    }).join("")}</div>`;
+    }).join("")}</div>${state.quickSetup && state.formatId ? `<div class="setup-note"><strong>제안 메뉴: ${state.menuIds.map((id) => getById(MENUS, id).name).join(" · ")}</strong><p>표준 원두·집기와 개업비까지 포함한 운전자금 ${formatMoney(costs.remaining)}. 다음 화면에서 영업시간을 정하면 첫 영업입니다.</p></div>` : ""}`;
   } else if (step.id === "bean") {
     body = `<div class="choice-grid cols-3">${BEAN_TIERS.map((tier) => choiceCard({
       id: tier.id, attr: "bean", name: tier.name, sub: tier.description,
@@ -808,9 +891,10 @@ function renderWizard() {
   document.querySelector("#wizard-next").addEventListener("click", advanceStep);
   screen.querySelectorAll("[data-step]").forEach((button) => button.addEventListener("click", () => {
     const index = Number(button.dataset.step);
-    if (index > state.step && !stepComplete(WIZARD_STEPS[state.step].id)) return;
+    if (index > state.step && !stepComplete(activeSteps()[state.step].id)) return;
     goToStep(index);
   }));
+  screen.querySelector("#campaign-mode")?.addEventListener("change", (event) => { state.campaignMode = event.target.value; saveProgress(); });
 
   const nameInput = screen.querySelector("#shop-name-input");
   if (nameInput) {
@@ -850,6 +934,7 @@ function renderWizard() {
     setView("wizard");
   }));
   screen.querySelectorAll("[data-capital]").forEach((button) => button.addEventListener("click", () => {
+    if (state.learning && button.dataset.capital !== "standard") { toast("수업의 공통 자본은 1억 5천만원입니다."); return; }
     state.capitalId = button.dataset.capital;
     sounds.click();
     setView("wizard");
@@ -872,6 +957,7 @@ function renderWizard() {
   }));
   screen.querySelectorAll("[data-format]").forEach((button) => button.addEventListener("click", () => {
     state.formatId = button.dataset.format;
+    if (state.quickSetup) state.menuIds = state.formatId === "bakery_cafe" ? ["americano", "latte", "saltbread"] : state.formatId === "specialty_cafe" ? ["signature", "latte", "cheesecake"] : ["americano", "latte", "cheesecake"];
     if (state.formatId !== "bakery_cafe") state.menuIds = state.menuIds.filter((id) => !getById(MENUS, id)?.bakeryOnly);
     sounds.click();
     setView("wizard");
@@ -912,6 +998,8 @@ function renderWizard() {
 }
 
 function startCampaign() {
+  if (state.learning && !state.learning.pre) { openQuiz("pre", startCampaign); return; }
+  if (state.learning) state.capitalId = "standard";
   const { district, format: baseFormat, remaining } = setupCosts();
   // 디저트 조달이 좌석을 정한다 — 납품이면 주방이 작아 좌석이 늘어난다
   const supplyPick = baseFormat?.bakes ? getById(SUPPLY_MODES, state.supplyModeId ?? "bake") : null;
@@ -923,13 +1011,14 @@ function startCampaign() {
   if (!(state.restaurantName ?? "").trim()) state.restaurantName = restaurantNameFor(menus[0]);
   state.setupCash = remaining;
   state.simulation = new RestaurantSimulation({
-    seed: "OPEN_IN_SEOUL_CAFE_V1",
+    seed: state.learning ? `CLASS:${state.learning.classCode}:${DATA_VERSION}` : "OPEN_IN_SEOUL_CAFE_V1",
     district,
     format,
     menus,
     beanTier: getById(BEAN_TIERS, state.beanTierId ?? "standard"),
     ownerRole: getById(OWNER_ROLES, state.ownerRoleId ?? "fulltime"),
     hourPlan: getById(HOUR_PLANS, state.hourPlanId ?? "standard"),
+    staffing: getById(STAFFING_PLANS, state.staffingId ?? "full"),
     supplyMode: getById(SUPPLY_MODES, state.supplyModeId ?? "bake"),
     ownerStats: state.ownerStats,
     equipment: getById(EQUIPMENT_TIERS, state.equipmentId ?? "standard"),
@@ -943,7 +1032,11 @@ function startCampaign() {
     hygiene: GAME_CONFIG.hygieneBase,
   });
   state.reports = [];
+  if (state.quickSetup) state.tutorialShown = true;
   state.campaign = {
+    runId: crypto.randomUUID(),
+    learning: state.learning ? { ...structuredClone(state.learning), post: null } : null,
+    initialSettings: Object.fromEntries(["districtId", "selectedDistrictId", "formatId", "menuIds", "beanTierId", "ownerRoleId", "supplyModeId", "hourPlanId", "staffingId", "businessTypeId", "ownerStats", "ownerLookId", "ownerHairId", "capitalId", "equipmentId", "researchBought", "loanUnits", "restaurantName", "quickSetup", "campaignMode"].map((key) => [key, structuredClone(state[key])])),
     month: 1,
     stage: "weekday",
     weekdayReport: null,
@@ -955,9 +1048,12 @@ function startCampaign() {
     repDay: "weekday",
     events: [],
     eventChoices: {},
+    openingCash: remaining,
+    setupOutflow: setupCosts().total,
   };
   rollMonthEvents();
   state.simulation.demandFactor = seasonFactor(1, district.id);
+  state.campaign.experimentBase = state.simulation.exportState();
   state.simulation.startDay(1);
   state.simulation.onFeed((entry) => {
     if (entry.tone === "bad") sounds.bad();
@@ -986,7 +1082,7 @@ function chargeEventChoices() {
     if (campaign.chargedEvents[key]) continue;
     const option = event.choice?.options.find((item) => item.id === campaign.eventChoices?.[event.id]);
     if (!option?.cost) continue;
-    sim.cash -= option.cost;
+    sim.spendOnce(option.cost, `${event.title} · ${option.name}`);
     campaign.chargedEvents[key] = true;
   }
 }
@@ -1075,7 +1171,7 @@ function renderBrief() {
 
           <section class="brief-card ledger-preview">
             <span class="card-label">오늘 확정 고정비</span>
-            <div class="preview-row"><span>인건비 <small>퇴직금 10% 포함</small></span><b>${formatMoney(laborFor(plan))}</b></div>
+            <div class="preview-row"><span>일 인건비 <small>보험·적립은 월말 별도</small></span><b>${formatMoney(laborFor(plan))}</b></div>
             <div class="preview-row"><span>월세 1/30</span><b>${formatMoney((sim.district.lease.monthlyRent * (sim.format.pyeong ?? 12)) / 12 / 30)}</b></div>
             <div class="preview-row is-total"><span>문 열기 전 이미 나간 돈</span><b>${formatMoney(laborFor(plan) + (sim.district.lease.monthlyRent * (sim.format.pyeong ?? 12)) / 12 / 30)}</b></div>
             <p class="preview-note">이 금액을 넘겨야 오늘 흑자입니다.</p>
@@ -1103,7 +1199,7 @@ function renderBrief() {
     if (isOpeningDay) {
       if (window.confirm("설계 화면으로 돌아가면 지금 가게를 버리고 다시 세웁니다. 계속할까요?")) {
         state.simulation = null;
-        state.step = WIZARD_STEPS.length - 1;
+        state.step = activeSteps().length - 1;
         setView("wizard");
       }
       return;
@@ -1141,10 +1237,16 @@ function renderBrief() {
 
   document.querySelector("#start-service").addEventListener("click", () => {
     state.restaurantName = (nameInput?.value.trim() || state.restaurantName || "온도커피").slice(0, 14);
+    if (state.campaign.month === 1 && day === 1 && state.campaign.initialSettings) {
+      Object.assign(state.campaign.initialSettings, { restaurantName: state.restaurantName, hourPlanId: state.hourPlanId });
+      state.campaign.initialEventChoices = structuredClone(state.campaign.eventChoices);
+    }
     sim.setHourPlan(getById(HOUR_PLANS, state.hourPlanId));
     chargeEventChoices();
     applySeasonDemand();
+    if (!state.campaign.weekdayReport && !state.campaign.weekendReport) state.campaign.experimentBase = sim.exportState();
     sim.startDay(day);
+    if (state.managementOnly) { sim.toggleOwnerWork(true); sim.setOwnerAuto(true); }
     sounds.bell();
     // 튜토리얼이 뜰 차례라면 시계를 켜지 않는다. setView가 동기라 플래그를 먼저 읽어둔다.
     const willTutorial = !state.tutorialShown;
@@ -1216,21 +1318,24 @@ function renderOperations() {
   lastPhaseId = snapshot.phase.id;
   ownerWasOnDuty = snapshot.onDuty;
   screen.innerHTML = `
-    <section class="operations-screen enter-up"><div class="ops-grid">
+    <section class="operations-screen enter-up">
+      <div class="chapter-strip"><span>${chapterLabel(state.campaign.month)}</span><b>${state.campaignMode === "chapters" ? "3챕터 체험" : "12개월 경영"} · ${state.campaign.month}/12월</b></div>
+      <section class="decision-board"><div><span class="meta-label">지금의 병목 · 관측 기반</span><h2 id="bottleneck-title">첫 손님을 기다리는 중</h2><p id="bottleneck-detail">자동 배치가 기본입니다. 직접 자리를 바꿔도 미니게임은 열리지 않습니다.</p></div><button class="secondary-button" id="bottleneck-action" type="button">입구에 배치</button><div class="decision-kpis"><span>현금 <b id="board-cash">${formatMoney(snapshot.cash)}</b></span><span>매출 <b id="board-sales">0만원</b></span><span>내 노동 <b id="board-hours">0.0시간</b></span></div></section>
+      <div class="ops-grid ${state.managementOnly ? "management-mode" : ""}">
       <div class="interior-column" id="arcade-column">
         <div class="interior-head"><span class="meta-label">MINIGAME</span><strong>사장의 자리 — 여기서 뜁니다</strong></div>
         <div class="interior-panel arcade-dock" id="arcade-dock">
           <div class="arcade-home" id="arcade-home">
-            <p class="arcade-home-lede">미니게임은 자리를 <b>클릭</b>하거나 <b>1 · 2 · 3</b> 키를 눌러야만 시작됩니다.<br />자동으로는 절대 열리지 않아요.</p>
-            <button class="arcade-home-card" data-station="bar" type="button">
+            <p class="arcade-home-lede">키보드 미니게임은 <b>선택 사항</b>입니다. 아래 버튼으로만 시작합니다. 터치 경영만으로도 끝까지 플레이할 수 있습니다.</p>
+            <button class="arcade-home-card" data-arcade="bar" type="button">
               <span class="ah-key">1</span><span class="ah-icon" aria-hidden="true">☕</span>
               <span class="ah-body"><b>${snapshot.stationNames?.bar ?? "키친"} — 키친 러시</b><span>←→ 이동 · 키를 <i>꾹</i> 눌러 추출/굽기, 노란 구간에서 떼기</span></span>
             </button>
-            <button class="arcade-home-card" data-station="hall" type="button">
+            <button class="arcade-home-card" data-arcade="hall" type="button">
               <span class="ah-key">2</span><span class="ah-icon" aria-hidden="true">🍽</span>
               <span class="ah-body"><b>${snapshot.stationNames?.hall ?? "홀"} — 홀 서빙</b><span>←→ 이동 · 말풍선 키 <i>Q/W/E/R</i> + <i>SPACE×2</i></span></span>
             </button>
-            <button class="arcade-home-card" data-station="door" type="button">
+            <button class="arcade-home-card" data-arcade="door" type="button">
               <span class="ah-key">3</span><span class="ah-icon" aria-hidden="true">📄</span>
               <span class="ah-body"><b>${snapshot.stationNames?.door ?? "입구"} — 전단지 돌리기</b><span>방향키 ↑↓←→ · 행인은 잡고, 진상은 피하고</span></span>
             </button>
@@ -1250,6 +1355,7 @@ function renderOperations() {
               <button class="speed-button" data-speed="0" type="button">Ⅱ</button><button class="speed-button active" data-speed="1" type="button">1×</button><button class="speed-button" data-speed="2" type="button">2×</button><button class="speed-button" data-speed="4" type="button">4×</button>
             </div>
             <div class="station-dock" id="station-dock" role="group" aria-label="사장의 자리">
+              ${["bar", "hall", "door"].map((id, index) => `<button class="station-button" data-station="${id}" type="button"><span class="station-name">${snapshot.stationNames[id]} 배치</span><span class="station-key">${index + 1}</span></button>`).join("")}
               <button class="work-toggle" id="work-toggle" type="button" title="스페이스 바로도 됩니다">
                 <span class="work-gauge"><i id="work-fill"></i></span>
                 <span class="stress-gauge" title="사장 스트레스"><i id="stress-fill"></i></span>
@@ -1264,7 +1370,7 @@ function renderOperations() {
               </button>
               <button class="station-button station-skip" id="skip-day" type="button" title="남은 하루를 즉시 계산하고 마감 리포트로 직행합니다">
                 <span class="station-icon" aria-hidden="true">⏭</span>
-                <span class="station-name">스킵</span>
+                <span class="station-name">자동 마감</span>
                 <span class="station-key">리포트</span>
               </button>
             </div>
@@ -1274,6 +1380,7 @@ function renderOperations() {
         <div class="dilemma-overlay" id="dilemma-overlay" hidden></div>
       </div>
       <aside class="ops-rail">
+        <section class="rail-card"><h2>직접 관리</h2><p class="rail-description">자리에 도착한 뒤 실행하세요. 모든 조작은 클릭·터치로 됩니다.</p><div class="management-tools"><button class="secondary-button" data-task="cleanMachine" type="button">키친 · 머신 청소</button><button class="secondary-button" data-task="restockCase" type="button">키친 · 재고 보충</button><button class="secondary-button" data-task="table" type="button">홀 · 빈 테이블 정리</button><button class="secondary-button" data-task="service" type="button">홀 · 손님 요청 응대</button></div><button class="text-button" id="toggle-arcade" type="button">${state.managementOnly ? "선택 미니게임 펼치기 (키보드)" : "미니게임 접고 경영에 집중"}</button></section>
         <section class="rail-card"><span class="meta-label">LIVE OPERATIONS</span><h2>${escapeHtml(state.restaurantName)} / ${sim.format.name}</h2><div class="operation-meters">
           <div class="meter-line"><span class="metric-label">주방 부하</span><div class="meter-bar"><i id="meter-kitchen" style="width:0%"></i></div><strong id="value-kitchen">0%</strong></div>
           ${sim.format.seats > 0 ? `<div class="meter-line"><span class="metric-label">홀 정리</span><div class="meter-bar"><i id="meter-hall" style="width:0%"></i></div><strong id="value-hall">0</strong></div>` : ""}
@@ -1283,11 +1390,30 @@ function renderOperations() {
         <section class="rail-card"><span class="meta-label">CUSTOMER FUNNEL</span><div class="live-funnel">
           <div><strong id="funnel-footfall">0</strong><span>유동·검색</span></div><div><strong id="funnel-entered">0</strong><span>입장</span></div><div><strong id="funnel-served">0</strong><span>제공</span></div><div><strong id="funnel-satisfied">0</strong><span>만족</span></div>
         </div></section>
-        <section class="rail-card event-feed"><span class="meta-label">LIVE FEEDBACK</span><h3>손님 행동 로그</h3><div class="feed-list" id="feed-list"><div class="feed-item"><time>${snapshot.clock}</time><span>영업이 시작됐습니다. 손님을 클릭하면 속마음이 보입니다.</span></div></div></section>
+        <details class="rail-card event-feed"><summary>손님 피드백 · 행동 로그</summary><div class="feed-list" id="feed-list"><div class="feed-item"><time>${snapshot.clock}</time><span>영업이 시작됐습니다. 손님을 클릭하면 속마음이 보입니다.</span></div></div></details>
         <button class="text-button notebook-button" id="open-notebook" type="button">장사 노트 열기</button>
-        <button class="end-day-button" id="open-report" type="button" disabled>영업 중 · 23:00 마감</button>
+        <button class="end-day-button" id="open-report" type="button" disabled>영업 중 · ${sim.hourPlan.close}:00 마감</button>
       </aside>
     </div></section>`;
+
+  document.querySelector("#toggle-arcade").addEventListener("click", () => { state.managementOnly = !state.managementOnly; setView("operations"); });
+  document.querySelector("#bottleneck-action").addEventListener("click", (event) => screen.querySelector(`[data-station="${event.currentTarget.dataset.station ?? "door"}"]`)?.click());
+  screen.querySelectorAll("[data-task]").forEach((button) => button.addEventListener("click", () => {
+    if (state.arcadeOpen || sim.activeDilemma) return;
+    const task = button.dataset.task;
+    let result;
+    if (task === "table") { const table = sim.tables.find((item) => item.state === "dirty"); result = table ? sim.ownerClean(table.id) : { ok: false, reason: "치울 테이블이 없습니다" }; }
+    else if (task === "service") { const agent = sim.activeAgents.find((item) => item.serviceRequested && !item.serviceResolved); result = agent ? sim.attendCustomer(agent.id) : { ok: false, reason: "응대 요청이 없습니다" }; }
+    else result = sim[task]();
+    toast(result.label ?? result.reason);
+  }));
+  screen.querySelectorAll("[data-arcade]").forEach((button) => button.addEventListener("click", () => {
+    const station = button.dataset.arcade;
+    if (sim.atStation(station) && !sim.finished && !sim.activeDilemma) { sim.setOwnerAuto(false); launchArcade(station); return; }
+    const result = sim.moveOwner(station);
+    if (result.ok) state.pendingArcade = station;
+    else toast(result.reason);
+  }));
 
   document.querySelectorAll("[data-speed]").forEach((button) => button.addEventListener("click", () => {
     const speed = Number(button.dataset.speed);
@@ -1314,7 +1440,7 @@ function renderOperations() {
       sim2.setSpeed(1);
       state.lastSpeed = 1;
       document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 1));
-      toast("수동 배치 — 자리를 직접 정하세요. 미니게임은 클릭·1/2/3으로 시작합니다.");
+      toast("수동 배치 — 자리를 직접 정하세요. 미니게임은 별도 버튼으로 선택할 때만 열립니다.");
     }
   });
   // 스킵 = 기다림도 생략: 남은 하루를 즉시 계산하고 마감 리포트로 직행한다.
@@ -1338,7 +1464,7 @@ function renderOperations() {
   // 스페이스 바로 출근/쉬기 — 손이 제일 빠른 키에 제일 자주 쓰는 동작을 둔다
   const spaceHandler = (event) => {
     if (event.code !== "Space") return;
-    if (state.view !== "operations" || state.arcadeOpen) return;
+    if (state.view !== "operations" || state.arcadeOpen || document.querySelector("dialog[open]")) return;
     if (event.target instanceof Element && event.target.closest("input, textarea, [contenteditable]")) return;
     event.preventDefault();
     document.querySelector("#work-toggle")?.click();
@@ -1369,7 +1495,7 @@ function renderOperations() {
     }
     const result = sim.moveOwner(stationId);
     if (result.ok) {
-      state.pendingArcade = stationId;
+      state.pendingArcade = null;
       sounds.good();
       gameScene?.addFloater(gameScene.ownerSpot?.x ?? 600, (gameScene.ownerSpot?.y ?? 600) - 100, result.label, "good");
     } else {
@@ -1618,7 +1744,7 @@ function beginOperationLoop() {
   const frame = (time) => {
     const delta = lastFrame ? Math.min(0.1, (time - lastFrame) / 1000) : 0.016;
     lastFrame = time;
-    const snapshot = sim.update(delta);
+    const snapshot = document.querySelector("dialog[open]") ? sim.snapshot() : sim.update(delta);
     gameScene?.draw(snapshot, delta);
     consumeVisualEvents(sim);
     updateOperationsHud(snapshot);
@@ -1657,6 +1783,18 @@ function updateOperationsHud(snapshot) {
   const byId = (id) => document.querySelector(`#${id}`);
   if (!byId("clock-value")) return;
   byId("clock-value").textContent = snapshot.clock;
+  const bottleneck = snapshot.queueLength >= 4 ? { title: `주문 ${snapshot.queueLength}건이 기다립니다`, detail: "키친에 사장을 배치해 제조를 돕거나, 다음 계획에서 인력을 비교하세요.", station: "bar" }
+    : snapshot.dirtyCount > 0 ? { title: `빈 테이블 ${snapshot.dirtyCount}개가 정리를 기다립니다`, detail: "홀에 배치한 뒤 ‘빈 테이블 정리’를 누르세요. 좌석을 늘리기 전 회전을 확인합니다.", station: "hall" }
+    : snapshot.machineWear >= 0.25 ? { title: "머신 관리가 필요합니다", detail: "키친에 도착한 뒤 머신 청소를 누르세요. 관리 시간도 사장 노동에 포함됩니다.", station: "bar" }
+    : { title: snapshot.metrics.served ? "큰 운영 병목은 없습니다" : "첫 손님을 만날 준비", detail: `지금까지 제공 ${snapshot.metrics.served}명 · 발견 못한 이탈 ${snapshot.metrics.losses.awareness ?? 0}명. 입구 배치로 유입을 도울 수 있습니다.`, station: "door" };
+  byId("bottleneck-title").textContent = bottleneck.title;
+  byId("bottleneck-detail").textContent = bottleneck.detail;
+  byId("bottleneck-action").textContent = `${snapshot.stationNames[bottleneck.station]}에 배치`;
+  byId("bottleneck-action").dataset.station = bottleneck.station;
+  byId("bottleneck-action").disabled = !snapshot.onDuty || snapshot.finished;
+  byId("board-cash").textContent = formatMoney(snapshot.cash);
+  byId("board-sales").textContent = formatMoney(snapshot.metrics.revenue);
+  byId("board-hours").textContent = `${(snapshot.ownerMinutesToday / 60).toFixed(1)}시간`;
   byId("phase-label").textContent = snapshot.phase.label;
   if (snapshot.phase.id !== lastPhaseId) {
     lastPhaseId = snapshot.phase.id;
@@ -1817,7 +1955,8 @@ function renderReport() {
     ["유동·검색", m.footfall], ["매장 인지", m.aware], ["입장", m.entered], ["주문", m.ordered],
     ["정상 제공", m.served], ["만족", m.satisfied], ["재방문 의향", m.repeatIntent],
   ];
-  const totalCosts = m.foodCost + m.platformCost + m.wasteCost + m.laborCost + m.rentCost + m.taxCost + m.utilityCost + m.actionCost;
+  const operatingCosts = (metrics) => ["foodCost", "platformCost", "wasteCost", "laborCost", "rentCost", "taxCost", "utilityCost", "actionCost"].reduce((sum, key) => sum + (metrics[key] ?? 0), 0);
+  const totalCosts = operatingCosts(m);
   const ownerHours = (m.ownerMinutes ?? 0) / 60;
   const reviews = m.reviews.length ? [...m.reviews].sort((a, b) => a.stars - b.stars).slice(0, 3) : [
     { customer: "마감 메모", stars: 0, text: "오늘은 공개 리뷰가 없었습니다. 행동 퍼널을 먼저 읽으세요.", tone: "neutral" },
@@ -1832,17 +1971,18 @@ function renderReport() {
       </header>
       <div class="report-kpis">
         <div class="report-kpi"><span class="metric-label">매출</span><strong>${formatMoney(m.revenue)}</strong>${delta(m.revenue, previous?.metrics.revenue, { money: true })}</div>
-        <div class="report-kpi"><span class="metric-label">영업비용</span><strong>${formatMoney(totalCosts)}</strong>${delta(totalCosts, previous ? previous.metrics.foodCost + previous.metrics.platformCost + previous.metrics.wasteCost + previous.metrics.laborCost + previous.metrics.rentCost : undefined, { money: true, inverse: true })}</div>
+        <div class="report-kpi"><span class="metric-label">영업비용</span><strong>${formatMoney(totalCosts)}</strong>${delta(totalCosts, previous ? operatingCosts(previous.metrics) : undefined, { money: true, inverse: true })}</div>
         <div class="report-kpi"><span class="metric-label">영업이익</span><strong class="${m.profit >= 0 ? "positive" : "negative"}">${formatMoney(m.profit)}</strong>${delta(m.profit, previous?.metrics.profit, { money: true })}</div>
         <div class="report-kpi"><span class="metric-label">평균 대기</span><strong>${m.averageWait.toFixed(1)}분</strong>${delta(m.averageWait, previous?.metrics.averageWait, { unit: "분", inverse: true })}</div>
         <div class="report-kpi"><span class="metric-label">평판</span><strong>${(report.reputation / 20).toFixed(1)} / 5</strong>${delta(report.reputation / 20, previous ? previous.reputation / 20 : undefined, { digits: 2 })}</div>
         <div class="report-kpi"><span class="metric-label">사장 노동</span><strong>${ownerHours.toFixed(1)}시간</strong><small class="kpi-delta">직접 개입 포함</small></div>
       </div>
+      <details class="report-panel"><summary>오늘의 원장·손님 퍼널·리뷰 펼치기</summary>
       <div class="ledger-strip"><span class="meta-label">상담 엑셀 원장</span>
         <div class="ledger-row"><span>재료(원두·부재료)</span><b>${formatMoney(m.foodCost)}</b></div>
-        <div class="ledger-row"><span>인건비 <small>(퇴직금 10% 적립 포함)</small></span><b>${formatMoney(m.laborCost)}</b></div>
+        <div class="ledger-row"><span>직원 급여 <small>(보험·퇴직 적립은 월 정산)</small></span><b>${formatMoney(m.laborCost)}</b></div>
         <div class="ledger-row"><span>월세 1/30</span><b>${formatMoney(m.rentCost)}</b></div>
-        <div class="ledger-row"><span>세금 10%</span><b>${formatMoney(m.taxCost)}</b></div>
+        <div class="ledger-row"><span>부가세 적립 <small>(수입÷11 · 매입세액 미반영)</small></span><b>${formatMoney(m.taxCost)}</b></div>
         <div class="ledger-row"><span>공과금·복리후생 5%</span><b>${formatMoney(m.utilityCost)}</b></div>
         <div class="ledger-row"><span>플랫폼·폐기·운영액션</span><b>${formatMoney(m.platformCost + m.wasteCost + m.actionCost)}</b></div>
       </div>
@@ -1884,10 +2024,15 @@ function renderReport() {
           ${reviews.map((review) => `<article class="review-card ${review.tone}"><span class="meta-label">${review.stars ? `${"★".repeat(Math.floor(review.stars))} ${review.stars.toFixed(1)}` : "NO REVIEW"} · ${review.customer}</span><p>“${escapeHtml(review.text)}”</p><span class="metric-label">${review.reason ? (review.tone === "good" ? PRAISE_EXPLANATIONS[review.reason] : LOSS_EXPLANATIONS[review.reason]) ?? "고객 경험" : "행동 데이터 우선"}</span></article>`).join("")}
         </div>
       </div>
+      </details>
+      ${coachMarkup()}
+      ${experimentMarkup()}
       <div class="report-actions">${!isWeekendReport && state.campaign.month === 1
         ? `<button class="cta" id="go-next" type="button"><span>주말 영업 준비</span><span aria-hidden="true">→</span></button>`
         : `<button class="cta" id="go-next" type="button"><span>${monthInfo(state.campaign.month).name} 마감 정산</span><span aria-hidden="true">→</span></button>`}</div>
     </section>`;
+  mountExperiment();
+  mountCoach();
   document.querySelector("#go-next")?.addEventListener("click", () => {
     const campaign = state.campaign;
     if (isWeekendReport) campaign.weekendReport = report; else campaign.weekdayReport = report;
@@ -1980,7 +2125,22 @@ function ensureBothDays() {
   }
 }
 
-function closeMonth() {
+function chapterLabel(month) {
+  return month < 4 ? "CHAPTER 1 · 문을 열다" : month < 9 ? "CHAPTER 2 · 성장의 비용" : "CHAPTER 3 · 남는 돈과 내 시간";
+}
+
+function advanceMonth() {
+  const campaign = state.campaign;
+  campaign.month += 1;
+  campaign.weekdayReport = null;
+  campaign.weekendReport = null;
+  campaign.stage = "monthPlan";
+  rollMonthEvents();
+  state.selectedActions = [];
+  applyPendingExperiment();
+}
+
+function closeMonth({ show = true } = {}) {
   const campaign = state.campaign;
   const sim = state.simulation;
   ensureBothDays();
@@ -1991,12 +2151,17 @@ function closeMonth() {
     weekendReport: campaign.weekendReport,
     businessTypeId: campaign.businessTypeId,
     loanAmount: campaign.loanAmount ?? 0,
+    oneOff: sim.monthSpending,
   });
   // 시뮬레이션은 이틀치만 현금에 반영했으므로, 나머지 한 달을 여기서 정산한다.
   const alreadyApplied = campaign.weekdayReport.metrics.profit + campaign.weekendReport.metrics.profit;
-  sim.cash += summary.profit - alreadyApplied;
+  sim.cash += summary.profit - alreadyApplied + sim.monthSpending.expense;
+  summary.cashBefore = campaign.openingCash;
   summary.cashAfter = sim.cash;
+  sim.monthSpending = { expense: 0, investment: 0, entries: [] };
+  campaign.openingCash = sim.cash;
   summary.ownerStress = Math.round(sim.ownerStress ?? 0);
+  summary.plan = { hours: sim.hourPlan.name, staffing: sim.staffing.name, owner: sim.ownerRole.name };
   summary.events = (campaign.events ?? []).map((event) => ({
     title: event.title,
     icon: event.icon,
@@ -2013,8 +2178,7 @@ function closeMonth() {
       setTimeout(() => { toast(`업적 달성 — ${item.name}`); sounds.bell(); }, 500 + index * 900);
     }))
     .catch(() => {});
-  sounds.bell();
-  setView("monthClose");
+  if (show) { sounds.bell(); setView("monthClose"); }
 }
 
 function renderMonthClose() {
@@ -2054,6 +2218,9 @@ function renderMonthClose() {
     ["소모품·포장재·점검 적립", c.supplies, sh.supplies, "실매출의 5%"],
     ["기장·세무", c.keeping, summary.netRevenue > 0 ? c.keeping / summary.netRevenue : 0, null],
     ["대출 이자", c.interest ?? 0, summary.netRevenue > 0 ? (c.interest ?? 0) / summary.netRevenue : 0, summary.loanAmount ? `${formatMoney(summary.loanAmount, true)} 대출 · 연 6.5%` : null],
+    ["폐기", c.waste, c.waste / Math.max(1, summary.netRevenue), null],
+    ["반복 운영액션", c.action ?? 0, (c.action ?? 0) / Math.max(1, summary.netRevenue), "대표일 지출을 영업일수로 환산"],
+    ["이번 달 일회성 지출", c.oneOffExpense ?? 0, (c.oneOffExpense ?? 0) / Math.max(1, summary.netRevenue), "마케팅·이벤트·전환 비용 · 한 번만"],
   ];
 
   screen.innerHTML = `
@@ -2071,11 +2238,18 @@ function renderMonthClose() {
 
       <div class="report-kpis">
         <div class="report-kpi"><span class="metric-label">월 매출</span><strong>${formatMoney(summary.revenue)}</strong>${previous ? deltaChip(summary.revenue, previous.revenue) : '<small class="kpi-delta">첫 달 기준선</small>'}</div>
-        <div class="report-kpi"><span class="metric-label">월 비용</span><strong>${formatMoney(summary.totalCost)}</strong>${previous ? deltaChip(previous.totalCost, summary.totalCost) : '<small class="kpi-delta">첫 달 기준선</small>'}</div>
+        <div class="report-kpi"><span class="metric-label">월 비용</span><strong>${formatMoney(summary.totalCost)}</strong>${previous ? deltaChip(summary.totalCost, previous.totalCost, true) : '<small class="kpi-delta">첫 달 기준선</small>'}</div>
         <div class="report-kpi"><span class="metric-label">월 순이익</span><strong class="${summary.profit >= 0 ? "positive" : "negative"}">${formatMoney(summary.profit)}</strong>${previous ? deltaChip(summary.profit, previous.profit) : '<small class="kpi-delta">첫 달 기준선</small>'}</div>
         <div class="report-kpi"><span class="metric-label">영업일</span><strong>${summary.days.weekdays + summary.days.weekends}일</strong><small class="kpi-delta">평일 ${summary.days.weekdays} · 주말 ${summary.days.weekends}</small></div>
         <div class="report-kpi"><span class="metric-label">사장 노동</span><strong>${ownerHours}시간</strong><small class="kpi-delta ${weeklyHours >= 52 ? "bad" : ""}">주 ${weeklyHours}시간${weeklyHours >= 52 ? " · 과로 구간" : weeklyHours >= 40 ? " · 풀타임 이상" : ""}</small><small class="kpi-delta ${stressNow >= 50 ? "bad" : "good"}">스트레스 ${stressNow} / 100</small></div>
         <div class="report-kpi"><span class="metric-label">보유 현금</span><strong>${formatMoney(summary.cashAfter)}</strong><small class="kpi-delta">${summary.cashAfter < 500 ? "위험 — 운전자금 부족" : "운영 가능"}</small></div>
+      </div>
+
+      <details class="report-panel"><summary>월 현금 대사·비용 원장·이탈·이벤트 펼치기</summary>
+      <div class="reality-check cash-reconciliation">
+        <span class="meta-label">현금 대사 · 초기 보증금/집기는 개업 때 지급 · 운영이익과 별도</span>
+        <p>월초 ${formatMoney(summary.cashBefore)} + 영업이익 ${formatMoney(summary.profit)} − 추가 자산 취득 ${formatMoney(summary.investmentOutflow ?? 0)} = 월말 ${formatMoney(summary.cashAfter)}</p>
+        ${(summary.oneOff?.entries ?? []).map((entry) => `<p>${escapeHtml(entry.label)} · ${formatMoney(entry.cost)} · ${entry.investment ? "자산 취득 (현금만 차감)" : "일회성 비용 (손익 반영)"}</p>`).join("")}
       </div>
 
       <div class="reality-check">
@@ -2090,7 +2264,7 @@ function renderMonthClose() {
       </div>
 
       ${coachItems.length ? `<div class="month-coach">
-        <span class="meta-label">다음 달을 위한 코치</span>
+        <span class="meta-label">관측한 이탈 상위 3개 · 아래 대응은 검증할 가설</span>
         <div class="coach-list">
           ${coachItems.map((item, index) => `
             <div class="coach-item">
@@ -2120,7 +2294,7 @@ function renderMonthClose() {
           <h2>실매출에서 무엇이 빠졌나</h2>
           <div class="ledger-sheet">
             <div class="ledger-top">
-              <div><span>실매출</span><small>부가세 10% 제외</small></div>
+              <div><span>부가세 적립 제외 수입</span><small>수입÷11 적립 · 매입세액 미반영</small></div>
               <b>${formatMoney(summary.netRevenue)}</b>
             </div>
             ${costRows.filter(([, value]) => Math.abs(value) > 0.001).map(([label, value, shareValue, note]) => `
@@ -2154,31 +2328,115 @@ function renderMonthClose() {
         </section>
       </div>
 
+      </details>
+      ${coachMarkup()}
+      ${experimentMarkup()}
+      <div class="chapter-strip"><span>${chapterLabel(campaign.month)}</span><p>${state.campaignMode === "chapters" ? "같은 선택을 유지하며 중간 달은 자동 계산합니다. 이벤트는 기본 선택을 적용하며, 12개월 기록은 모두 남습니다." : "매달 경영 결정을 직접 내리는 전체 캠페인입니다."}</p></div>
       <div class="report-actions">
-        <button class="cta" id="month-next" type="button"><span>${isFinalMonth ? "연말정산 하기" : `${monthInfo(campaign.month + 1).name} 경영 계획`}</span><span aria-hidden="true">→</span></button>
+        <button class="cta" id="month-next" type="button"><span>${isFinalMonth ? "연말정산 하기" : state.campaignMode === "chapters" ? (campaign.month < 4 ? "2–3월 자동 정산 → 4월 성장 계획" : campaign.month < 9 ? "5–8월 자동 정산 → 9월 생존 계획" : "남은 달 자동 정산 → 연말정산") : `${monthInfo(campaign.month + 1).name} 경영 계획`}</span><span aria-hidden="true">→</span></button>
+        ${state.campaignMode === "chapters" && !isFinalMonth ? `<button class="text-button" id="switch-full" type="button">다음 달부터 매달 직접 결정하기</button>` : ""}
       </div>
     </section>`;
 
+  mountExperiment();
+  mountCoach();
+  document.querySelector("#switch-full")?.addEventListener("click", () => { state.campaignMode = "full"; setView("monthClose"); });
   document.querySelector("#month-next").addEventListener("click", () => {
     if (isFinalMonth) {
       setView("final");
       return;
     }
-    campaign.month += 1;
-    campaign.weekdayReport = null;
-    campaign.weekendReport = null;
-    campaign.stage = "monthPlan";
-    rollMonthEvents();
-    state.selectedActions = [];
+    const target = state.campaignMode === "chapters" ? (campaign.month < 4 ? 4 : campaign.month < 9 ? 9 : 13) : campaign.month + 1;
+    while (campaign.month + 1 < target) {
+      advanceMonth();
+      chargeEventChoices();
+      applySeasonDemand();
+      campaign.experimentBase = sim.exportState();
+      closeMonth({ show: false });
+      campaign.months.at(-1).autoAdvanced = true;
+    }
+    if (target === 13) { setView("final"); return; }
+    advanceMonth();
     sounds.click();
     setView("monthPlan");
   });
 }
 
-function deltaChip(current, before) {
+function experimentMarkup() {
+  const saved = state.campaign?.experimentBase;
+  if (!saved) return "";
+  const groups = [["hourPlan", "영업시간", HOUR_PLANS], ["staffing", "인력 편성", STAFFING_PLANS], ["ownerRole", "사장 근무 예산", OWNER_ROLES]];
+  return `<section class="report-panel experiment-panel">
+    <span class="meta-label">ONE DECISION, SAME CITY · ${DATA_VERSION}</span>
+    <h2>하나만 바꾸면, 얼마나 달라질까?</h2>
+    <p>같은 시작 상태·손님 난수·날씨에서 두 조건 모두 사장 자동 배치로 계산합니다. 직접 플레이 결과와는 운영 방식이 다를 수 있습니다.</p>
+    <div class="experiment-controls"><label for="experiment-change">바꿀 조건</label><select id="experiment-change">${groups.map(([key, title, items]) => `<optgroup label="${title}">${items.filter((item) => item.id !== saved.data[key]?.id).map((item) => `<option value="${key}:${item.id}">${title} → ${item.name}</option>`).join("")}</optgroup>`).join("")}</select><button class="primary-button" id="run-experiment" type="button">같은 조건으로 비교</button></div>
+    <div id="experiment-results" aria-live="polite"></div>
+  </section>`;
+}
+
+function coachMarkup() {
+  const campaign = state.campaign;
+  if (!campaign?.experimentBase) return "";
+  campaign.coach ??= {};
+  const cards = campaign.coach[campaign.month] ??= buildCoach(campaign.experimentBase, { monthNumber: campaign.month, businessTypeId: campaign.businessTypeId, loanAmount: campaign.loanAmount });
+  return `<section class="report-panel evidence-coach"><span class="meta-label" id="coach-mode">계산 근거 코치 · 생성 AI 미연결</span><h2>한 조건씩 비교한 세 가지 결정</h2><p>같은 시작 상태·손님 난수·자동 운영에서 계산한 가설입니다. 실제 선택의 인과적 기여도 순위나 매출 예측이 아닙니다. 월 이익 차이의 절댓값 순으로 보여줍니다.</p><div class="coach-cards">${cards.map((card, index) => `<article class="coach-card"><h3>${index + 1}. ${card.title}</h3><p>${escapeHtml(card.from)} → ${escapeHtml(card.to)}</p><dl><dt>월 영업이익</dt><dd>${formatMoney(card.facts.beforeProfit)} → ${formatMoney(card.facts.afterProfit)}<br />차이 ${formatMoney(card.facts.profitDelta)}</dd><dt>사장 노동</dt><dd>${card.facts.beforeHours.toFixed(1)} → ${card.facts.afterHours.toFixed(1)}시간 (${card.facts.hoursDelta > 0 ? "+" : ""}${card.facts.hoursDelta.toFixed(1)})</dd><dt>정상 제공</dt><dd>${card.facts.servedDelta > 0 ? "+" : ""}${card.facts.servedDelta}명</dd></dl><p id="coach-text-${card.id}">${card.explanation}</p><small>근거: 합성 시나리오·부가세 적립·2026 최저임금 / ${card.version}</small><button class="secondary-button" data-coach-mission="${index}" type="button">이 조건으로 10분 비교 미션</button></article>`).join("")}</div><p id="mission-result" aria-live="polite"></p></section>`;
+}
+
+function mountCoach() {
+  const campaign = state.campaign;
+  const cards = campaign.coach?.[campaign.month];
+  if (!cards) return;
+  screen.querySelectorAll("[data-coach-mission]").forEach((button) => button.addEventListener("click", () => {
+    const card = cards[Number(button.dataset.coachMission)];
+    document.querySelector("#experiment-change").value = `${card.change.key}:${card.change.id}`;
+    document.querySelector("#mission-result").textContent = "10분 미션: 바꾸기 전 예상 → 같은 조건 비교 → 이익과 노동을 함께 읽기. 효과가 나쁘면 적용하지 않아도 됩니다.";
+    document.querySelector("#run-experiment").focus();
+    document.querySelector(".experiment-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    campaign.activeMission = card.id;
+    saveProgress();
+  }));
+  const mode = document.querySelector("#coach-mode");
+  narrateCoach(cards, document.querySelector('meta[name="ois-coach-endpoint"]')?.content).then((result) => {
+    if (!mode?.isConnected) return;
+    mode.textContent = result.mode;
+    cards.forEach((card, index) => { document.querySelector(`#coach-text-${card.id}`).textContent = result.texts[index]; });
+  });
+}
+
+function mountExperiment() {
+  document.querySelector("#run-experiment")?.addEventListener("click", () => {
+    const [key, id] = document.querySelector("#experiment-change").value.split(":");
+    try {
+      const result = compareCondition(state.campaign.experimentBase, { monthNumber: state.campaign.month, businessTypeId: state.campaign.businessTypeId, loanAmount: state.campaign.loanAmount }, { key, id });
+      state.campaign.experiments = [...(state.campaign.experiments ?? []), result].slice(-20);
+      state.campaign.comparedConditions ??= [];
+      const comparisonId = `${state.campaign.month}:${key}:${id}`;
+      if (!state.campaign.comparedConditions.includes(comparisonId)) state.campaign.comparedConditions.push(comparisonId);
+      const mission = state.campaign.coach?.[state.campaign.month]?.find((card) => card.id === state.campaign.activeMission);
+      if (mission?.change.key === key && mission.change.id === id) { state.campaign.missions ??= []; if (!state.campaign.missions.includes(mission.id)) state.campaign.missions.push(mission.id); }
+      const rows = [["월 영업이익", formatMoney(result.before.profit), formatMoney(result.after.profit), formatMoney(result.delta.profit)], ["사장 노동", `${(result.before.ownerMinutes / 60).toFixed(1)}시간`, `${(result.after.ownerMinutes / 60).toFixed(1)}시간`, `${(result.delta.ownerMinutes / 60).toFixed(1)}시간`], ["정상 제공", `${result.before.served}명`, `${result.after.served}명`, `${result.delta.served}명`]];
+      document.querySelector("#experiment-results").innerHTML = `<p>${escapeHtml(result.policy)} · 비교 조건 ${escapeHtml(result.from)} → ${escapeHtml(result.to)}</p><div class="notebook-table-wrap"><table class="comparison-table"><thead><tr><th>근거</th><th>기존 조건</th><th>변경 조건</th><th>차이</th></tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${value}</td>`).join("")}</tr>`).join("")}</tbody></table></div>${state.campaign.month < 12 ? `<button class="secondary-button" id="apply-experiment" type="button">다음 달에 이 조건 적용</button>` : ""}`;
+      document.querySelector("#apply-experiment")?.addEventListener("click", () => { state.pendingExperiment = { key, id }; saveProgress(); toast("다음 달 계획에 비교한 조건을 적용합니다."); });
+      platform.logEvent("experiment_completed", { month: state.campaign.month, key, id, profitDelta: result.delta.profit, ownerMinutesDelta: result.delta.ownerMinutes, version: DATA_VERSION });
+      saveProgress();
+    } catch (error) { toast(error.message); }
+  });
+}
+
+function applyPendingExperiment() {
+  const change = state.pendingExperiment;
+  if (!change) return;
+  const collections = { hourPlan: HOUR_PLANS, staffing: STAFFING_PLANS, ownerRole: OWNER_ROLES };
+  state.simulation[change.key] = getById(collections[change.key], change.id);
+  state[{ hourPlan: "hourPlanId", staffing: "staffingId", ownerRole: "ownerRoleId" }[change.key]] = change.id;
+  state.pendingExperiment = null;
+}
+
+function deltaChip(current, before, inverse = false) {
   const change = current - before;
   const neutral = Math.abs(change) < 0.005;
-  return `<small class="kpi-delta ${neutral ? "" : change > 0 ? "good" : "bad"}">전월 ${change > 0 ? "+" : ""}${formatMoney(change)}</small>`;
+  return `<small class="kpi-delta ${neutral ? "" : (inverse ? change < 0 : change > 0) ? "good" : "bad"}">전월 ${change > 0 ? "+" : ""}${formatMoney(change)}</small>`;
 }
 
 function renderImprovements() {
@@ -2326,13 +2584,13 @@ function renderImprovements() {
 
           <div class="repday-choice">
             <button class="repday ${campaign.repDay === "weekday" ? "is-selected" : ""}" data-repday="weekday" type="button">
-              <b>평일을 직접</b><span>주말은 직원에게 맡기고 결과만 받습니다.</span>
+              <b>평일을 직접</b><span>주말은 사장 자동 배치로 계산하며 노동시간도 포함됩니다.</span>
             </button>
             <button class="repday ${campaign.repDay === "weekend" ? "is-selected" : ""}" data-repday="weekend" type="button">
-              <b>주말을 직접</b><span>평일은 직원에게 맡기고 결과만 받습니다.</span>
+              <b>주말을 직접</b><span>평일은 사장 자동 배치로 계산하며 노동시간도 포함됩니다.</span>
             </button>
             <button class="repday ${campaign.repDay === "auto" ? "is-selected" : ""}" data-repday="auto" type="button">
-              <b>둘 다 맡긴다</b><span>빠르게 넘깁니다. 사장의 개입이 없으니 결과는 그만큼 나빠집니다.</span>
+              <b>사장 자동 배치로 정산</b><span>사장이 병목을 보고 일하며 실제 노동시간을 계산합니다.</span>
             </button>
           </div>
 
@@ -2379,7 +2637,7 @@ function renderImprovements() {
   }));
   document.querySelector("#buy-bakery-gear")?.addEventListener("click", () => {
     if (sim.cash < BAKERY_GEAR_COST) { toast("현금이 부족합니다."); sounds.bad(); return; }
-    sim.cash -= BAKERY_GEAR_COST;
+    sim.spendOnce(BAKERY_GEAR_COST, "베이커리 기구 증설", true);
     state.bakeryGearBought = true;
     sounds.good();
     toast(`베이커리 기구를 증설했습니다. −${formatMoney(BAKERY_GEAR_COST)} — 이제 빵을 납품받아 팔 수 있습니다.`);
@@ -2394,13 +2652,13 @@ function renderImprovements() {
     if (!state.everFired) {
       // 절차 없는 해고의 값 — 노동부 민원과 한 달치 위로금
       const settlement = Math.round((sim.district.hourlyWage * hire.wageMultiplier * hire.hours * 30) / 10000);
-      sim.cash -= settlement;
+      sim.spendOnce(settlement, "퇴사 전환 비용 (게임 가정)");
       state.everFired = true;
       const code = hire.role.charCodeAt(hire.role.length - 1);
       const josa = code >= 0xac00 && code <= 0xd7a3 && (code - 0xac00) % 28 !== 0 ? "이" : "가";
-      state.dismissalNotice = `⚠ ${hire.role}${josa} 노동부에 부당해고 민원을 넣었습니다. 위로금 한 달치 ${formatMoney(settlement)}이 자동 지급됐습니다. 앞으로는 사직서와 퇴사자 서약서를 받는 권고 사직 절차를 밟습니다.`;
+      state.dismissalNotice = `인력 전환 비용 ${formatMoney(settlement)}을 반영했습니다. 첫 퇴사에 한 달 급여를 적용하는 게임 가정입니다. 실제 법적 비용·절차를 뜻하지 않습니다.`;
       sounds.bad();
-      toast(`부당해고 민원 — 위로금 ${formatMoney(settlement)} 지급`);
+      toast(`인력 전환 비용 ${formatMoney(settlement)} 반영`);
     } else {
       sounds.click();
       toast(`${hire.role} 권고 사직 처리. 사직서와 서약서를 받았습니다.`);
@@ -2437,6 +2695,9 @@ function renderImprovements() {
     state.selectedActions = [];
     sim.setHourPlan(getById(HOUR_PLANS, state.hourPlanId));
     sounds.bell();
+    chargeEventChoices();
+    applySeasonDemand();
+    campaign.experimentBase = sim.exportState();
     if (campaign.repDay === "auto") {
       closeMonth();
       return;
@@ -2450,6 +2711,7 @@ function renderImprovements() {
 
 function renderYearEnd() {
   const campaign = state.campaign;
+  campaign.runId ??= crypto.randomUUID();
   const sim = state.simulation;
   const ownerHours = campaign.ownerMinutesTotal / 60;
   const settlement = yearEndSettlement({
@@ -2458,6 +2720,11 @@ function renderYearEnd() {
     ownerHours,
   });
   const grade = yearGrade(settlement, GAME_CONFIG.minimumWage);
+  if (!campaign.taxSettled) {
+    sim.cash -= settlement.tax;
+    campaign.taxSettled = true;
+    campaign.cashAfterTax = sim.cash;
+  }
   const ending = endingFor({ netProfit: settlement.netProfit, ownerHours });
   const score = campaignScore({
     profit: settlement.netProfit,
@@ -2511,7 +2778,10 @@ function renderYearEnd() {
         <div class="report-kpi"><span class="metric-label">${settlement.business.id === "corp" ? "법인세" : "종합소득세"}</span><strong class="negative">−${formatMoney(settlement.tax)}</strong><small class="kpi-delta">세율 ${Math.round(settlement.taxRate * 100)}%</small></div>
         <div class="report-kpi"><span class="metric-label">세후 순이익</span><strong class="${settlement.netProfit >= 0 ? "positive" : "negative"}">${formatMoney(settlement.netProfit)}</strong></div>
         <div class="report-kpi"><span class="metric-label">흑자 달</span><strong>${monthsInBlack} / 12</strong></div>
+        <div class="report-kpi"><span class="metric-label">세후 보유 현금</span><strong>${formatMoney(campaign.cashAfterTax)}</strong><small class="kpi-delta">초기 자본과 이익은 다릅니다 · 대출 원금 상환 미반영</small></div>
       </div>
+      ${coachMarkup()}
+      ${experimentMarkup()}
 
       <div class="hourly-verdict is-year ${settlement.hourlyWon >= GAME_CONFIG.minimumWage ? "good" : "bad"}">
         <span class="meta-label">1년을 시급으로 환산하면</span>
@@ -2525,9 +2795,9 @@ function renderYearEnd() {
       <div class="report-grid">
         <section class="report-panel">
           <span class="meta-label">TAX BREAKDOWN</span>
-          <h2>1년 동안 국가에 낸 돈</h2>
+          <h2>세금·보험의 게임 추정</h2>
           <div class="month-ledger">
-            <div class="ledger-row"><span>부가가치세 (매달 10%)</span><b>${formatMoney(settlement.vatPaid)}</b></div>
+            <div class="ledger-row"><span>부가세 매출세액 적립 (수입÷11)</span><b>${formatMoney(settlement.vatPaid)}</b></div>
             <div class="ledger-row"><span>4대보험 사업자부담</span><b>${formatMoney(settlement.insurancePaid)}</b></div>
             <div class="ledger-row"><span>${settlement.business.id === "corp" ? "법인세" : "종합소득세"} ${settlement.taxableBase > 0 ? `(과세표준 ${formatMoney(settlement.taxableBase)})` : "(적자 — 과세표준 없음)"}</span><b>${formatMoney(settlement.tax)}</b></div>
             <div class="ledger-row is-monthly"><span>합계<em>세금·보험</em></span><b>${formatMoney(settlement.vatPaid + settlement.insurancePaid + settlement.tax)}</b></div>
@@ -2538,9 +2808,9 @@ function renderYearEnd() {
             <p>${settlement.taxableBase <= 0
               ? "적자라서 어느 쪽이든 소득세·법인세는 0원입니다. 세금이 문제가 아니라 이익이 문제입니다."
               : settlement.alternativeTax < settlement.tax
-                ? `${formatMoney(settlement.tax - settlement.alternativeTax)} 덜 냈습니다. 이익이 커질수록 법인이 유리해집니다.`
+                ? `같은 과세표준의 기본세율만 비교하면 ${formatMoney(settlement.tax - settlement.alternativeTax)} 낮습니다. 실제 절세 판단은 아닙니다.`
                 : settlement.alternativeTax > settlement.tax
-                  ? `${formatMoney(settlement.alternativeTax - settlement.tax)} 더 냈을 겁니다. 이익이 작을 때는 개인이 유리합니다.`
+                  ? `같은 과세표준의 기본세율만 비교하면 ${formatMoney(settlement.alternativeTax - settlement.tax)} 높습니다. 실제 절세 판단은 아닙니다.`
                   : "이 구간에서는 두 유형의 세금이 같습니다."}</p>
           </div>
         </section>
@@ -2567,6 +2837,7 @@ function renderYearEnd() {
         <span class="meta-label">이 게임이 하려던 말</span>
         <p>커피 한 잔에 남는 돈은 생각보다 작고, 그 작은 돈에서 재료·인건비·월세·부가세·4대보험·카드수수료·소모품이 차례로 빠져나갑니다. 그리고 1년이 끝나면 ${settlement.business.id === "corp" ? "법인세" : "종합소득세"}가 한 번 더 옵니다. 카페를 여는 일은 커피를 잘 만드는 일이 아니라, 이 모든 것을 매달 감당하는 일입니다.</p>
       </div>
+      <details class="report-panel"><summary>12개월 원장 · 자동 정산한 달과 당시 선택</summary><div class="notebook-table-wrap"><table class="comparison-table"><thead><tr><th>달</th><th>정산</th><th>영업이익</th><th>월말 현금</th><th>사장 시간</th><th>운영 조건·이벤트</th></tr></thead><tbody>${campaign.months.map((month) => `<tr><td>${month.name}</td><td>${month.autoAdvanced ? "자동" : "직접 결정"}</td><td>${formatMoney(month.profit)}</td><td>${formatMoney(month.cashAfter)}</td><td>${(month.ownerMinutes / 60).toFixed(1)}</td><td>${escapeHtml(month.plan ? `${month.plan.hours} / ${month.plan.staffing} / ${month.plan.owner}` : "기존 기록")}<br />${(month.events ?? []).map((event) => escapeHtml(`${event.title}: ${event.picked ?? "선택 없음"}`)).join(" · ")}</td></tr>`).join("")}</tbody></table></div><p>12월 월말 현금 ${formatMoney(campaign.months.at(-1).cashAfter)} − 연말 세금 ${formatMoney(settlement.tax)} = 세후 현금 ${formatMoney(campaign.cashAfterTax)}. 초기 보증금은 회수하지 않았습니다.</p></details>
 
       <div class="platform-panel">
         <div class="platform-head"><span class="meta-label">${escapeHtml(platform.name)} 랭킹</span><b>${score.toLocaleString("ko-KR")} pt</b></div>
@@ -2578,26 +2849,38 @@ function renderYearEnd() {
       </div>
 
       <div class="report-actions">
+        ${campaign.initialSettings ? `<button class="secondary-button" id="same-setup-retry" type="button">같은 개업 조건으로 재도전</button>` : ""}
+        ${campaign.learning ? `<button class="secondary-button" id="post-quiz" type="button">${campaign.learning.post ? "사후 이해도 응답 완료 · 결과 저장" : "사후 이해도 3문항 · 결과 저장"}</button>` : ""}
         <button class="secondary-button" id="review-months" type="button"><span>12월 리포트 다시 보기</span><span aria-hidden="true">←</span></button>
         <button class="cta" id="restart-game" type="button"><span>다른 상권으로 다시 시작</span><span aria-hidden="true">↻</span></button>
       </div>
     </section>`;
 
   sounds.good();
+  mountExperiment();
+  mountCoach();
+  document.querySelector("#post-quiz")?.addEventListener("click", () => campaign.learning.post ? openLearning() : openQuiz("post", openLearning));
+  document.querySelector("#same-setup-retry")?.addEventListener("click", () => {
+    if (!window.confirm("현재 결산 대신 같은 개업 조건의 새 캠페인을 시작할까요? 필요하면 결과를 먼저 저장하세요.")) return;
+    Object.assign(state, structuredClone(campaign.initialSettings));
+    state.selectedActions = []; state.everFired = false; state.bakeryGearBought = false; state.pendingExperiment = null;
+    startCampaign();
+    if (campaign.initialEventChoices) { state.campaign.eventChoices = structuredClone(campaign.initialEventChoices); setView("brief"); }
+  });
   document.querySelector("#restart-game").addEventListener("click", () => {
     if (window.confirm("1년 기록을 지우고 새 카페를 시작할까요?")) resetGame();
   });
   document.querySelector("#review-months").addEventListener("click", () => setView("monthClose"));
 
   const boardId = `year-${sim.district.id}`;
-  platform.logEvent("year_complete", { district: sim.district.id, grade, score, hourly: settlement.hourlyWon });
+  if (!campaign.completeLogged) { platform.logEvent("year_complete", { district: sim.district.id, grade, score, hourly: settlement.hourlyWon }); campaign.completeLogged = true; }
   platform.submitScore(boardId, {
     score,
     name: state.restaurantName,
     district: sim.district.shortName,
     grade,
     hourlyWon: settlement.hourlyWon,
-    at: `${sim.seed}:YEAR`,
+    at: campaign.runId,
   })
     .then(() => platform.getLeaderboard(boardId))
     .then((rows) => {
@@ -2636,6 +2919,85 @@ soundToggle.addEventListener("click", async () => {
   if (enabled) sounds.good();
 });
 
+const sourceDialog = document.createElement("dialog");
+sourceDialog.className = "help-dialog source-dialog";
+sourceDialog.innerHTML = `<button class="icon-button source-close" type="button">닫기</button>${sourceMarkup()}`;
+document.body.append(sourceDialog);
+document.querySelector(".footer-strip")?.insertAdjacentHTML("beforeend", `<button class="text-button source-toggle" type="button">${DATA_VERSION} · 합성 상권 / 공식 기준·출처</button>`);
+document.querySelector(".footer-strip")?.insertAdjacentHTML("beforeend", `<button class="text-button learning-open" type="button">익명 수업·교육 결과</button>`);
+
+const learningDialog = document.createElement("dialog");
+learningDialog.className = "help-dialog learning-dialog";
+document.body.append(learningDialog);
+
+function recordLearning() {
+  const campaign = state.campaign;
+  if (!campaign?.learning) return null;
+  const complete = !!campaign.taxSettled && campaign.months.length === 12;
+  const settlement = complete ? yearEndSettlement({ months: campaign.months, businessTypeId: campaign.businessTypeId, ownerHours: campaign.ownerMinutesTotal / 60 }) : null;
+  let row;
+  try { row = validateLearning({ schema: 1, version: DATA_VERSION, runId: campaign.runId, participantId: campaign.learning.participantId, classCode: campaign.learning.classCode, goal: campaign.learning.goal,
+    district: state.simulation.district.id, format: state.simulation.format.id, startingCapital: 15000, months: campaign.months.length, completed: complete, updatedAt: Date.now(),
+    ownerHours: campaign.ownerMinutesTotal / 60, comparisons: new Set(campaign.comparedConditions ?? (campaign.experiments ?? []).map((result) => `${result.before.monthNumber}:${result.change.key}:${result.change.id}`)).size,
+    sources: campaign.learning.sources, pre: campaign.learning.pre, post: campaign.learning.post,
+    netProfit: settlement?.netProfit ?? null, hourlyWon: settlement?.hourlyWon ?? null, cash: complete ? campaign.cashAfterTax : null });
+  } catch { return null; } // 손상된 수업 기록이 게임 진행 저장까지 막지 않는다.
+  platform.saveLearning(row);
+  return row;
+}
+
+function openQuiz(stage, onDone) {
+  learningDialog.innerHTML = `<button class="icon-button learning-close" type="button">닫기</button><h2>${stage === "pre" ? "플레이 전" : "플레이 후"} · 비용 이해도</h2><p>이해도는 정답 3문항, 자신감은 별도 응답입니다. 동일 문항 반복의 영향이 있을 수 있습니다. 외부 전송 없이 저장합니다.</p><form id="quiz-form">${QUESTIONS.map((question, i) => `<label>${i + 1}. ${question.text}<select name="q${i}" required><option value="">답변 선택</option>${question.options.map((text, index) => `<option value="${index}">${text}</option>`).join("")}</select></label>`).join("")}<label>창업 비용·노동 결정을 설명할 자신감<select name="confidence" required><option value="">선택</option>${["매우 낮음", "낮음", "보통", "높음", "매우 높음"].map((label, index) => `<option value="${index + 1}">${index + 1} · ${label}</option>`).join("")}</select></label><button class="primary-button" type="submit">응답 저장</button><p id="quiz-error" role="status"></p></form>`;
+  learningDialog.querySelector("form").onsubmit = (event) => {
+    event.preventDefault();
+    try { const form = new FormData(event.target); if ([...QUESTIONS.map((_, i) => form.get(`q${i}`)), form.get("confidence")].some((value) => value == null || value === "")) throw new Error("모든 문항에 답변하세요"); const quiz = scoreQuiz(QUESTIONS.map((_, i) => Number(form.get(`q${i}`))), Number(form.get("confidence")));
+      if (stage === "pre") state.learning.pre = quiz; else state.campaign.learning.post = quiz;
+      learningDialog.close(); saveProgress(); onDone();
+    } catch (error) { document.querySelector("#quiz-error").textContent = error.message; }
+  };
+  if (!learningDialog.open) learningDialog.showModal();
+}
+
+function openLearning() {
+  const row = recordLearning();
+  const suggested = state.learning?.classCode ?? new URLSearchParams(location.search).get("class") ?? "";
+  const saved = platform.readSession();
+  const previous = saved?.version === DATA_VERSION ? saved.state?.learning : null;
+  const canResume = !state.simulation && previous?.classCode === String(suggested).toUpperCase();
+  learningDialog.innerHTML = `<button class="icon-button learning-close" type="button">닫기</button><h2>익명 수업·파일럿</h2><p>이름·이메일·연락처는 수집하지 않습니다. 고유 난수 ID, 수업 코드, 결정·결과·이해도만 이 브라우저에 저장합니다. 자동 서버 전송은 없습니다. 파일을 강사에게 전달할 때만 내용을 공유합니다.</p>
+    ${canResume ? `<p>이 수업의 저장 기록이 있습니다. 새 시도를 시작해도 같은 익명 참가자 ID를 사용합니다.</p><button class="primary-button" id="resume-learning" type="button">기존 수업 이어하기</button>` : ""}
+    ${row ? `<p>${escapeHtml(row.classCode)} · ${row.completed ? "12개월 완주" : `${row.months}개월 진행`} · 비교 ${row.comparisons}조건 · 사전 ${row.pre?.score ?? "—"}/3 · 사후 ${row.post?.score ?? "—"}/3</p><button class="primary-button" id="export-learning" type="button">이 시도 JSON 저장</button><button class="secondary-button" id="export-learning-all" type="button">이 참가자의 시작·재도전 기록 모두 저장</button>${row.completed && !row.post ? `<button class="secondary-button" id="open-post-quiz" type="button">사후 이해도 응답</button>` : ""}<p>시작 직후 파일을 먼저 강사에게 전달해야 미완주를 포함한 완주율을 셀 수 있습니다. 완료 후 같은 runId의 최신 파일을 다시 전달하세요.</p>` : ""}
+    <form id="join-class"><label>수업 코드 (영문·숫자·_- / 개인 정보 금지)<input name="code" maxlength="20" pattern="[A-Za-z0-9_-]{3,20}" value="${escapeHtml(suggested)}" required></label><label>공통 주제<select name="goal"><option value="profit">현금과 손익 구분</option><option value="hours">사장 노동시간 비교</option></select></label><label class="consent-label"><input name="consent" type="checkbox" required> 익명 기록의 로컬 저장과 직접 파일 전달을 이해했습니다.</label><button class="secondary-button" type="submit" ${state.simulation ? "disabled" : ""}>공통 자본 1억 5천만원으로 참여</button><p>${state.simulation ? "진행 중 수업 변경은 지원하지 않습니다. 첫 화면의 새 게임에서 참여하세요." : "수업 코드가 같으면 시작 난수도 같습니다. 이후 상권·업태·대출과 운영 결정은 직접 선택합니다."}</p><p id="join-error" role="status"></p></form><button class="text-button" id="leave-class" type="button">수업 나가기 (기존 기록은 보존)</button>`;
+  learningDialog.querySelector('[name="goal"]').value = state.learning?.goal ?? (new URLSearchParams(location.search).get("goal") === "hours" ? "hours" : "profit");
+  document.querySelector("#export-learning")?.addEventListener("click", () => downloadFile(`ois-${row.classCode}-${row.runId}.json`, JSON.stringify(row, null, 2), "application/json"));
+  document.querySelector("#resume-learning")?.addEventListener("click", () => { learningDialog.close(); restoreProgress(); });
+  document.querySelector("#export-learning-all")?.addEventListener("click", () => downloadFile(`ois-${row.classCode}-attempts.json`, JSON.stringify(platform.readLearning().filter((item) => item.participantId === row.participantId && item.classCode === row.classCode), null, 2), "application/json"));
+  document.querySelector("#open-post-quiz")?.addEventListener("click", () => openQuiz("post", openLearning));
+  document.querySelector("#leave-class").onclick = () => { if (state.simulation) { toast("진행 중 수업 변경은 할 수 없습니다."); return; } state.learning = null; learningDialog.close(); setView(state.view); };
+  document.querySelector("#join-class").onsubmit = (event) => {
+    event.preventDefault();
+    if (state.simulation) return;
+    try { const form = new FormData(event.target); if (!form.get("consent") || !["profit", "hours"].includes(form.get("goal"))) throw new Error("주제와 저장·파일 전달 안내를 확인하세요");
+      const code = classCode(form.get("code"));
+      const identity = state.learning?.classCode === code ? state.learning : previous?.classCode === code ? previous : null;
+      state.learning = identity ? { ...identity, goal: form.get("goal") } : { classCode: code, goal: form.get("goal"), participantId: crypto.randomUUID(), pre: null, sources: [] }; state.capitalId = "standard";
+      learningDialog.close(); if (state.view === "landing") document.querySelector("#start-game").click(); else setView(state.view); toast("익명 수업 · 공통 자본으로 개업 준비를 시작합니다.");
+    } catch(error) { document.querySelector("#join-error").textContent = error.message; }
+  };
+  if (!learningDialog.open) learningDialog.showModal();
+}
+
+function recordSource(id) {
+  const learning = state.campaign?.learning ?? state.learning;
+  if (learning && !learning.sources.includes(id)) { learning.sources.push(id); saveProgress(); }
+}
+document.addEventListener("click", (event) => {
+  if (event.target.closest(".learning-open")) openLearning();
+  if (event.target.closest(".learning-close") || event.target === learningDialog) learningDialog.close();
+  if (event.target.closest(".source-toggle")) { sourceDialog.showModal(); platform.logEvent("source_view", { version: DATA_VERSION }); recordSource("dictionary"); }
+  if (event.target.closest("[data-source-id]")) recordSource(event.target.closest("[data-source-id]").dataset.sourceId);
+  if (event.target.closest(".source-close") || event.target === sourceDialog) sourceDialog.close();
+});
 helpToggle.addEventListener("click", () => helpDialog.showModal());
 helpClose.addEventListener("click", () => helpDialog.close());
 helpDialog.addEventListener("click", (event) => { if (event.target === helpDialog) helpDialog.close(); });
@@ -2645,7 +3007,7 @@ brandHome.addEventListener("click", () => {
   if (!hasProgress || window.confirm("현재 진행을 끝내고 첫 화면으로 돌아갈까요?")) resetGame();
 });
 window.addEventListener("keydown", (event) => {
-  if (state.view !== "operations" || !state.simulation) return;
+  if (state.view !== "operations" || !state.simulation || document.querySelector("dialog[open]")) return;
   const station = OWNER_STATIONS.find((item) => item.key === event.key);
   if (station && !state.simulation.activeDilemma && !state.arcadeOpen) {
     event.preventDefault();
@@ -2659,7 +3021,7 @@ window.addEventListener("keydown", (event) => {
       return;
     }
     const result = state.simulation.moveOwner(station.id);
-    if (result.ok) { state.pendingArcade = station.id; sounds.good(); } else toast(result.reason);
+    if (result.ok) { state.pendingArcade = null; sounds.good(); } else toast(result.reason);
     return;
   }
   // 스페이스는 출근/쉬기 전용(별도 핸들러). 일시정지는 Ⅱ 버튼 클릭으로만.
@@ -2674,6 +3036,7 @@ platform.signIn()
   .catch(() => { /* 오프라인·시크릿 모드에서도 그대로 플레이 */ });
 
 render();
+if (new URLSearchParams(location.search).has("class") && !state.learning) openLearning();
 
 // URL 파라미터로 특정 상태까지 자동 진행한다.
 // 헤드리스 캡처와 데모 영상 촬영에 쓰고, 일반 플레이에는 영향이 없다.
@@ -2691,18 +3054,11 @@ render();
       localStorage.setItem("ois-cafe/tutorial-done-v5", "1");
     } catch { /* 저장 불가 환경에서도 진행 */ }
     document.querySelector("#start-game")?.click(); await wait(80);
+    document.querySelector("#wizard-next")?.click(); await wait(60);
     pick("[data-district]", "성수"); await wait(60);
     document.querySelector("#wizard-next")?.click(); await wait(60);
     pick("[data-format]", "스페셜티"); await wait(60);
     document.querySelector("#wizard-next")?.click(); await wait(60);
-    pick("[data-bean]", "스페셜티"); await wait(60);
-    document.querySelector("#wizard-next")?.click(); await wait(60);
-    pick("[data-menu]", "시그니처"); pick("[data-menu]", "카페라떼"); pick("[data-menu]", "바스크"); await wait(60);
-    document.querySelector("#wizard-next")?.click(); await wait(60);
-    pick("[data-role]", "풀타임"); await wait(60);
-    document.querySelector("#wizard-next")?.click(); await wait(60);
-    document.querySelector('[data-business="sole"]')?.click(); await wait(60);
-    document.querySelector("#wizard-next")?.click(); await wait(120);
     if (preset === "brief") return;
     // 발표용: 벚꽃 성수기 피크로 바로 점프해 코어 루프만 보여준다
     if (preset === "blossom") {

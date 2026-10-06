@@ -1,5 +1,6 @@
 // OPEN IN SEOUL — Cafe. 모든 수치는 실제 창업 상담 모델을 게임 밸런스로
 // 정규화한 합성 데이터다. 특정 서비스의 실제 데이터가 아니다. 금액 단위는 만원.
+export const DATA_VERSION = "seoul-cafe-2026.10-v3";
 
 // ── 사장 캐릭터 ──────────────────────────────────────────────
 // 게임 시작 전에 "누가 이 가게를 하는가"부터 정한다.
@@ -101,10 +102,10 @@ export const GAME_CONFIG = {
   fitRevealCount: 3,
   ownerBoostMinutes: 25,
   ownerBoostCooldown: 150,
-  taxRate: 0.1,        // 부가세 등 단순화 10%
+  taxRate: 1 / 11,     // 부가세 포함 매출에서 매출세액 적립. 매입세액/간이과세 미반영
   utilityRate: 0.05,   // 공과금·복리후생 5%
   severanceRate: 0.1,  // 시급의 10% 매월 퇴직금 적립
-  minimumWage: 10030,  // 결산 화면의 비교 기준
+  minimumWage: 10320,  // 2026 최저임금위원회 시간급. 사장 시간가치의 비교 기준
   demandScale: 0.22,   // 상권 유동 → 잠재고객 변환 계수. 밸런스 테스트로 고정된 값이다.
 };
 
@@ -321,7 +322,7 @@ export const DILEMMAS = [
     title: "인쇄골목 사장님들의 외상 장부",
     situation: "옆 인쇄소 사장님이 골목 사장님들 것까지 커피 12잔을 주문하며 말합니다. \"장부에 달아놔, 월말에 줄게.\"",
     options: [
-      { id: "tab", name: "장부를 만든다", detail: "골목 단골 12명이 생깁니다. 돈은 월말에 들어옵니다(아마도).", cost: 0, default: true },
+      { id: "tab", name: "장부를 만든다", detail: "골목 단골 12명 · 외상 매출 5만원. 게임에서는 대표 영업일 마감에 전액 회수합니다(미수 위험 미반영).", cost: 0, default: true },
       { id: "cash_only", name: "현금만 받는다", detail: "깔끔하지만, 골목에서 정 없는 집이 됩니다.", cost: 0 },
     ],
   },
@@ -384,7 +385,7 @@ export const DISTRICTS = [
     research: {
       rent: { title: "부동산 시세", text: "1층 12평 평균 보증금 4,500 · 월세 490. 권리금은 회수까지 최소 2년을 봐야 합니다." },
       sales: { title: "동종업계 매출", text: "반경 300m 1인 카페 월매출 중앙값 1,900. 상위 20%는 테이크아웃 회전으로 3,200을 넘깁니다." },
-      wage: { title: "인근 시급 시세", text: "바리스타 시급 11,000원. 주휴·퇴직금 적립까지 계산하면 실질 인건비는 시급의 120%입니다." },
+      wage: { title: "시급 가정", text: "바리스타 시급 11,000원. 보험·퇴직 적립은 월 원장에서 별도 가산하며 주휴수당은 따로 산출하지 않습니다." },
     },
   },
   {
@@ -492,7 +493,7 @@ export const DISTRICTS = [
     traffic: [12, 24, 30, 35, 48, 62, 58, 66, 74, 82, 88, 95, 100, 90, 78, 64, 46],
     mix: { office_worker: 10, cafe_studier: 46, mz_hotple: 18, local_resident: 14, delivery_customer: 12 },
     lease: { deposit: 2200, keyMoney: 1400, monthlyRent: 240, fitout: 650 },
-    hourlyWage: 10300,
+    hourlyWage: 10320,
     weekday: 1.05,
     weekend: 0.75,
     competition: 74,
@@ -505,7 +506,7 @@ export const DISTRICTS = [
     research: {
       rent: { title: "부동산 시세", text: "대로변 이면 1층 보증금 2,200 · 월세 240. 방학이 끼면 유동이 25% 빠집니다." },
       sales: { title: "동종업계 매출", text: "카공 허용 카페의 객단가 5,100원, 체류 2.8시간. 회전형 카페는 객단가는 같고 체류만 짧습니다." },
-      wage: { title: "인근 시급 시세", text: "시급 10,300원. 같은 학교 학생 알바 지원이 많아 채용은 쉽습니다." },
+      wage: { title: "시급 가정", text: "시급 10,320원. 학생 알바 지원이 많은 대학가라는 합성 시나리오입니다." },
     },
   },
   {
@@ -532,7 +533,7 @@ export const DISTRICTS = [
     traffic: [22, 40, 46, 42, 55, 64, 58, 62, 70, 66, 60, 72, 85, 100, 80, 58, 40],
     mix: { office_worker: 10, cafe_studier: 10, mz_hotple: 6, local_resident: 52, delivery_customer: 22 },
     lease: { deposit: 1800, keyMoney: 800, monthlyRent: 190, fitout: 600 },
-    hourlyWage: 10030,
+    hourlyWage: 10320,
     weekday: 0.95,
     weekend: 1.3,
     competition: 52,
@@ -545,7 +546,7 @@ export const DISTRICTS = [
     research: {
       rent: { title: "부동산 시세", text: "단지 상가 1층 보증금 1,800 · 월세 190. 5개 상권 중 고정비가 가장 가볍습니다." },
       sales: { title: "동종업계 매출", text: "주거상권 카페 월매출 중앙값 1,100. 디저트·배달 병행 매장은 1,600까지 올라갑니다." },
-      wage: { title: "인근 시급 시세", text: "시급 10,030원(최저시급). 오전 주부 알바 지원이 꾸준합니다." },
+      wage: { title: "시급 가정", text: "시급 10,320원(2026 최저임금). 오전 근무 지원이 꾸준하다는 게임 가정입니다." },
     },
   },
 ];
@@ -727,13 +728,13 @@ export const BUSINESS_TYPES = [
   {
     id: "sole", name: "개인사업자", icon: "◑",
     description: "설립이 간단하고 초기 비용이 없습니다. 세율은 이익에 따라 6%에서 45%까지 올라갑니다.",
-    advice: "연 이익 8,800만원 아래라면 대개 이쪽이 유리합니다. 첫 해에는 보통 여기서 시작합니다.",
+    advice: "공제·지방소득세 등을 제외한 기본세율 연습입니다. 실제 사업자 형태는 세율만으로 결정할 수 없습니다.",
     setupCost: 0, annualKeeping: 60,
   },
   {
     id: "corp", name: "법인사업자", icon: "◈",
-    description: "세율이 2억까지 9%로 평평합니다. 대신 설립비와 매년 기장료가 나갑니다.",
-    advice: "연 이익 8,800만원을 넘길 자신이 있을 때 유리합니다. 그 아래면 기장료 때문에 오히려 손해입니다.",
+    description: "2026 일반 영리법인 기본세율은 2억까지 10%입니다. 게임에서는 설립비·기장료를 추가합니다.",
+    advice: "소규모법인 별도 세율·공제·지방소득세·대표 급여/배당을 반영하지 않습니다. 실제 절세 상담이 아닙니다.",
     setupCost: 120, annualKeeping: 240,
   },
 ];
@@ -752,9 +753,10 @@ export const INCOME_TAX_BRACKETS = [
 
 // 법인세 (과세표준, 세율, 누진공제) — 단위 만원
 export const CORPORATE_TAX_BRACKETS = [
-  { upTo: 20000, rate: 0.09, deduct: 0 },
-  { upTo: 2000000, rate: 0.19, deduct: 2000 },
-  { upTo: Infinity, rate: 0.21, deduct: 42000 },
+  { upTo: 20000, rate: 0.10, deduct: 0 },
+  { upTo: 2000000, rate: 0.20, deduct: 2000 },
+  { upTo: 30000000, rate: 0.22, deduct: 42000 },
+  { upTo: Infinity, rate: 0.25, deduct: 942000 },
 ];
 
 // 월 단위로만 나가는 비용 — 일 단위 시뮬레이션에는 없던 현실의 청구서
@@ -987,28 +989,28 @@ export const ENDINGS = [
   {
     id: "tycoon", name: "떼돈 버는 대표님", icon: "👑",
     tagline: "돈도 벌고 시간도 지켰습니다.",
-    body: "직원이 돌아가는 시스템을 만들었고, 사장은 필요한 순간에만 들어갔습니다. 2호점 이야기를 꺼내도 되는 자리입니다.",
+    body: "이 시나리오에서 연 순이익 4천만원 이상, 사장 노동 2천시간 이하를 함께 달성했습니다. 확장 전에 다른 상권에서도 이 구조가 유지되는지 비교하세요.",
     rare: true,
   },
   {
     id: "chill", name: "여유로운 동네 사장", icon: "🌿",
     tagline: "크게 벌진 않았지만, 하루가 내 것이었습니다.",
-    body: "월세 내고 직원 월급 주고 조금 남았습니다. 대신 저녁이 있었고 단골 이름을 다 압니다. 많은 사람이 진짜로 원하는 결말입니다.",
+    body: "흑자를 내면서 사장 노동을 연 2천시간 이하로 지켰습니다. 다음에는 시간 예산을 유지한 채 수익을 개선해 보세요.",
   },
   {
     id: "burnout", name: "번아웃 사장님", icon: "🔥",
     tagline: "돈은 벌었는데, 1년을 통째로 갈아 넣었습니다.",
-    body: "통장은 두둑합니다. 다만 그 시간에 다른 걸 했다면 어땠을까 하는 생각이 자꾸 듭니다. 이 상태로 2년은 못 갑니다.",
+    body: "연 순이익 4천만원 이상이지만 사장 노동이 2천시간을 넘었습니다. 직원 편성과 영업시간을 하나씩 바꿔 시간과 이익의 교환을 확인하세요.",
   },
   {
-    id: "reality", name: "자영업의 현실", icon: "☕",
-    tagline: "쉬지도 못했고, 남지도 않았습니다.",
-    body: "가장 흔한 결말입니다. 나쁜 사장이어서가 아니라 상권·구조·인건비가 그렇게 짜여 있었기 때문입니다. 다시 하면 다르게 할 수 있습니다.",
+    id: "reality", name: "시간을 많이 쓴 흑자 사장", icon: "☕",
+    tagline: "흑자를 냈지만, 시간 목표는 넘겼습니다.",
+    body: "순이익은 0원보다 크고 4천만원 미만, 사장 노동은 2천시간 초과입니다. 적자가 아닙니다. 시간당 수익을 근거로 다음 조건을 비교해 보세요.",
   },
   {
-    id: "closed", name: "폐업 정리", icon: "🔒",
+    id: "closed", name: "손익 재검토가 필요한 사장", icon: "🔒",
     tagline: "1년을 일하고 돈을 냈습니다.",
-    body: "보증금으로 밀린 것들을 정리했습니다. 흔한 일이고, 당신 탓만은 아닙니다. 상권을 바꾸거나 유형을 바꾸면 결과는 완전히 달라집니다.",
+    body: "이 시나리오의 연 순이익이 0원 이하입니다. 보증금 회수·폐업 청산은 계산하지 않았습니다. 비용과 놓친 수요를 확인한 뒤 한 조건만 바꿔 보세요.",
   },
 ];
 

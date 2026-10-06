@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><title>OPEN IN SEOUL responsive QA</title>
+<style>body{margin:20px;background:#555;color:white;font:16px system-ui}iframe{display:block;border:0;height:844px;background:#14100d}</style>
+<p id="size"></p><iframe id="game" title="실제 게임 모바일 폭 검수" src="../"></iframe>
+<script>
+const width = Math.max(320, Math.min(1440, Number(new URLSearchParams(location.search).get('width')) || 390));
+document.querySelector('#game').style.width = `${width}px`;
+if (new URLSearchParams(location.search).get('page') === 'education') document.querySelector('#game').src = '../education.html';
+document.querySelector('#size').textContent = `${width} × 844 CSS pixels · 실제 페이지의 독립 viewport`;
+</script></html>

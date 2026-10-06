@@ -7,7 +7,7 @@
 // 시뮬레이션은 게임 중에도 흐른다. 여기서 한 일이 그대로 매장의 결과가 된다.
 // 미니게임만큼은 고해상도로 그린다 — 도트 씬과 달리 DPR 풀 해상도.
 
-import { artReady, drawFigure, drawTableProp, coverDraw } from "./art.js";
+import { artReady, drawFigure, drawTableProp, coverDraw } from "./art.js?release=20261006";
 
 const SKIN_TONES = ["#f0c39a", "#e8b088", "#d9a077", "#f4cfa8"];
 const HAIR_TONES = ["#241f1c", "#3a2e24", "#4a3a2a", "#1c1c22", "#5e2f38"];

@@ -2,7 +2,9 @@ import {
   BEAN_TIERS,
   CUSTOMERS,
   DAY_NAMES,
+  DATA_VERSION,
   DILEMMAS,
+  DELIVERY_COMMISSION,
   FEEDBACK,
   GAME_CONFIG,
   HOUR_PLANS,
@@ -21,7 +23,7 @@ import {
   REGULAR_NAMES,
   WEATHER,
   getById,
-} from "./data.js";
+} from "./data.js?release=20261006";
 
 const FORMAT_FIT = {
   solo_cafe: { office_worker: 1, cafe_studier: 0.7, mz_hotple: 0.55, local_resident: 0.82, delivery_customer: 0.6 },
@@ -197,6 +199,8 @@ function makeEmptyMetrics(openHour = 10, closeHour = 23) {
     repeatIntent: 0,
     reviewed: 0,
     revenue: 0,
+    receivable: 0,
+    receivableCollected: 0,
     foodCost: 0,
     laborCost: 0,
     rentCost: 0,
@@ -226,7 +230,6 @@ function createArrivalSchedule({ seed, day, district, campaigns, awareness, weat
   const weekend = day >= 6;
   const weekendFactor = weekend ? district.weekend : district.weekday;
   const campaignMap = new Map(campaigns.filter((campaign) => campaign.remaining > 0).map((campaign) => [campaign.id, campaign]));
-  let arrivalIndex = 0;
 
   district.traffic.forEach((trafficValue, hourIndex) => {
     const hour = GAME_CONFIG.earliestOpenHour + hourIndex;
@@ -250,15 +253,14 @@ function createArrivalSchedule({ seed, day, district, campaigns, awareness, weat
       const customer = pickWeighted(CUSTOMERS, typeWeights, keyedRandom(seed, day, hour, i, "type"));
       const minuteJitter = ((i + 0.18 + 0.64 * keyedRandom(seed, day, hour, i, "time")) / count) * 60;
       arrivals.push({
-        id: `D${day}-${arrivalIndex}`,
+        id: `D${day}-H${hour}-${i}`,
         day,
         spawnMinute: hour * 60 + minuteJitter,
         customerId: customer.id,
         hour,
         awarenessBaseline: awareness,
-        randomKey: arrivalIndex,
+        randomKey: hour * 10000 + i,
       });
-      arrivalIndex += 1;
     }
   });
 
@@ -266,6 +268,40 @@ function createArrivalSchedule({ seed, day, district, campaigns, awareness, weat
 }
 
 export class RestaurantSimulation {
+  exportState() {
+    const { feedListeners, dilemmaHandler, ...data } = this;
+    return {
+      version: DATA_VERSION,
+      data: JSON.parse(JSON.stringify(data, (key, value) => {
+        if (value instanceof Set) return { $set: [...value] };
+        if (typeof value === "number" && !Number.isFinite(value)) return { $number: String(value) };
+        return value;
+      })),
+    };
+  }
+
+  static fromState(saved) {
+    if (saved?.version !== DATA_VERSION || !saved.data) throw new Error("저장한 계산 기준 버전이 다릅니다");
+    const data = JSON.parse(JSON.stringify(saved.data), (key, value) => {
+      if (value?.$set) return new Set(value.$set);
+      if (value?.$number) return Number(value.$number);
+      return value;
+    });
+    if (!Number.isFinite(data.cash) || !Number.isFinite(data.gameMinute) || !data.menus?.length
+      || !data.district?.id || !data.format?.id || !Array.isArray(data.activeAgents)
+      || !data.hourPlan?.id || !data.staffing?.id || !data.ownerRole?.id
+      || !data.beanTier?.id || !Number.isFinite(data.equipment?.cookSpeed) || !data.supplyMode?.id
+      || !Array.isArray(data.kitchenLanes) || !Array.isArray(data.upgrades)) throw new Error("저장 기록이 손상되었습니다");
+    const sim = Object.create(RestaurantSimulation.prototype);
+    for (const [key, value] of Object.entries(data)) {
+      if (["__proto__", "constructor", "prototype"].includes(key)) throw new Error("잘못된 저장 기록입니다");
+      sim[key] = value;
+    }
+    sim.feedListeners = new Set();
+    sim.dilemmaHandler = null;
+    return sim;
+  }
+
   constructor({ seed = "OPEN_IN_SEOUL_V1", district, format, menus, cash, reputation, awareness, hygiene, campaigns = [], upgrades = [], beanTier, ownerRole, hourPlan, supplyMode, staffing, ownerStats, ownerLook, hires, equipment }) {
     this.seed = seed;
     this.district = district;
@@ -298,6 +334,7 @@ export class RestaurantSimulation {
     this.hygiene = hygiene;
     this.campaigns = campaigns.map((campaign) => ({ ...campaign }));
     this.upgrades = [...upgrades];
+    this.monthSpending = { expense: 0, investment: 0, entries: [] };
     this.day = 0;
     this.running = false;
     this.finished = false;
@@ -713,7 +750,7 @@ export class RestaurantSimulation {
     let waste = 0.025;
     let hygiene = 0;
     if (this.hasUpgrade("lunch_prep")) { cookSpeed *= 1.18; waste += 0.04; }
-    if (this.hasUpgrade("part_timer")) { capacity *= 1.22; dailyLabor += 9; }
+    if (this.hasUpgrade("part_timer")) { capacity *= 1.22; dailyLabor += 7; }
     if (this.hasUpgrade("kitchen_upgrade")) { capacity *= 1.28; quality += 0.03; }
     cookSpeed *= this.equipment.cookSpeed ?? 1;
     quality += this.equipment.quality ?? 0;
@@ -729,8 +766,8 @@ export class RestaurantSimulation {
     waste *= this.monthEffects.waste ?? 1;
     // 사장이 바에 서는 시간에는 제조속도가 올라간다 (주문 단위로 동적 적용)
     // "피크타임만 선다"의 피크는 상권마다 다르다 — busy 페이즈가 그 상권의 피크다.
-    const ownerOnBar = this.ownerRole.schedule === "all"
-      || (this.ownerRole.schedule === "peak" && this.currentPhase().busy);
+    const ownerOnBar = this.atStation("bar") && (this.ownerRole.schedule === "all"
+      || (this.ownerRole.schedule === "peak" && this.currentPhase().busy));
     if (ownerOnBar) cookSpeed *= 1 + (this.ownerRole.capacityBonus - 1) * this.stressFactor();
     // 추가로 뽑은 바리스타는 제조 속도로 값을 한다
     cookSpeed *= 1 + 0.12 * this.extraBaristaCount();
@@ -975,7 +1012,6 @@ export class RestaurantSimulation {
     agent.bubble = "사장님이 직접!";
     agent.bubbleTone = "good";
     this.metrics.ownerActions.attended = (this.metrics.ownerActions.attended ?? 0) + 1;
-    this.ownerInterventionMinutes += 1;
     return { ok: true, label: "응대 완료 — 만족도 상승", tone: "good" };
   }
 
@@ -1246,6 +1282,7 @@ export class RestaurantSimulation {
     } else if (dilemma.id === "popup_shoot") {
       if (option.id === "allow") {
         this.cash += 30;
+        this.metrics.revenue += 30;
         mods.closingBonus.awareness += 6;
         mods.stayCap = true;
         this.emit("촬영팀이 들어왔습니다. 대관료 +₩300,000, 내일 인지도가 뜁니다. 오늘 좌석은 반쪽입니다.", "good");
@@ -1265,8 +1302,9 @@ export class RestaurantSimulation {
     } else if (dilemma.id === "print_alley") {
       if (option.id === "tab") {
         this.metrics.revenue += 5;
+        this.metrics.receivable += 5;
         mods.closingBonus.reputation += 2;
-        this.emit("장부를 만들었습니다. 골목 사장님들이 단골이 됩니다. 커피값은 월말에(아마도).", "good");
+        this.emit("외상 장부 +₩50,000. 대표일 마감에 전액 회수하는 게임 가정입니다. 수금 전에는 현금이 늘지 않습니다.", "good");
       } else {
         this.emit("현금만 받기로 했습니다. 깔끔하지만 골목이 조금 서늘해집니다.", "neutral");
       }
@@ -1317,7 +1355,6 @@ export class RestaurantSimulation {
     this.ownerBoostUntil = this.gameMinute + GAME_CONFIG.ownerBoostMinutes;
     this.ownerBoostReadyAt = this.gameMinute + GAME_CONFIG.ownerBoostCooldown;
     this.ownerTask = { type: "kitchen", until: this.ownerBoostUntil, tableId: null };
-    this.ownerInterventionMinutes += GAME_CONFIG.ownerBoostMinutes;
     this.emit("사장이 직접 바에 들어갑니다. 잠시 제조속도가 올라갑니다.", "good");
     return true;
   }
@@ -1332,7 +1369,6 @@ export class RestaurantSimulation {
     if (this.machine.wear < 0.25) return { ok: false, reason: "머신이 아직 깨끗합니다" };
     this.machine.wear = 0;
     this.ownerTask = { type: "machine", until: this.gameMinute + 3, tableId: null };
-    this.ownerInterventionMinutes += 3;
     this.metrics.ownerActions.machineCleans += 1;
     this.emit("그룹헤드를 백플러싱했습니다. 샷이 다시 달아집니다.", "good");
     return { ok: true, label: "머신 청소 완료", tone: "good" };
@@ -1437,7 +1473,6 @@ export class RestaurantSimulation {
     this.cash -= cost;
     this.metrics.actionCost += cost;
     this.metrics.ownerActions.restocks += 1;
-    this.ownerInterventionMinutes += 5;
     this.pendingRestock = {
       readyAt: this.gameMinute + (bakes ? 30 : 15),
       quantity: bakes ? 12 : 8,
@@ -1462,7 +1497,6 @@ export class RestaurantSimulation {
     }
     this.ownerTask = { type: "clean", until: finishAt, tableId };
     this.metrics.ownerActions.cleaned += 1;
-    this.ownerInterventionMinutes += OWNER_CLEAN_MINUTES;
     return { ok: true, label: "사장이 치우는 중" };
   }
 
@@ -1477,7 +1511,6 @@ export class RestaurantSimulation {
     this.flyersLeft -= 1;
     agent.flyered = true;
     this.metrics.ownerActions.flyers += 1;
-    this.ownerInterventionMinutes += 1;
     const accepts = keyedRandom(this.seed, agent.id, "flyer") < 0.72;
     if (accepts) {
       this.metrics.aware += 1;
@@ -1508,7 +1541,6 @@ export class RestaurantSimulation {
     this.cash -= cost;
     this.metrics.actionCost += cost;
     this.metrics.ownerActions.drinks += 1;
-    this.ownerInterventionMinutes += 1;
     agent.bubble = "음료 감사해요!";
     agent.bubbleTone = "good";
     if (agent.willAbandon) {
@@ -1772,8 +1804,8 @@ export class RestaurantSimulation {
     const deliveryCampaign = this.getCampaign("delivery_coupon");
     if (agent.channel === "delivery") {
       const discount = deliveryCampaign?.discount ?? 0;
-      received -= discount;
-      platform = received * 0.22 * (this.monthEffects.platform ?? 1);
+      received *= 1 - discount;
+      platform = received * DELIVERY_COMMISSION * (this.monthEffects.platform ?? 1);
     }
     const ingredient = agent.menu.price * this.menuCostRatio(agent.menu) * this.dayMods.foodCost * (this.monthEffects.foodCost ?? 1);
     this.metrics.revenue += received;
@@ -2005,7 +2037,11 @@ export class RestaurantSimulation {
     this.metrics.taxCost = this.metrics.revenue * GAME_CONFIG.taxRate;
     this.metrics.utilityCost = this.metrics.revenue * GAME_CONFIG.utilityRate * (this.monthEffects.utility ?? 1);
     this.cash -= this.metrics.wasteCost + this.metrics.taxCost + this.metrics.utilityCost;
-    this.metrics.ownerMinutes = this.ownerBaseMinutes() + this.ownerInterventionMinutes;
+    this.cash += this.metrics.receivable;
+    this.metrics.receivableCollected = this.metrics.receivable;
+    this.metrics.receivable = 0;
+    // 근무 예산은 계획이다. 이동·작업은 같은 시계에서 진행해 중복 합산하지 않는다.
+    this.metrics.ownerMinutes = this.ownerInterventionMinutes;
     this.ownerMinutesTotal += this.metrics.ownerMinutes;
     this.lastRepeatIntent = this.metrics.repeatIntent;
     this.metrics.profit = this.metrics.revenue
@@ -2071,11 +2107,11 @@ export class RestaurantSimulation {
       awareness: `상권 가시성 ${this.district.visibility}/100 · 현재 인지도 ${Math.round(this.awareness)}/100`,
       price: `가장 낮은 판매가 ${formatMoney(lowestPrice)} · 고객별 편안한 예산과 비교`,
       value: `정상 제공 ${this.metrics.served}명 중 가격 대비 구성 불만`,
-      menu: `대표 메뉴 ‘${this.menus[0].name}’ · ${this.district.tags.slice(0, 2).join("·")} 수요와 비교`,
+      menu: `운영 메뉴 ${this.menus.length}개 · 고객별 선택·예산·방문 목적을 함께 관측`,
       wait: `주문 ${this.metrics.ordered}건 중 정상 제공 ${this.metrics.served}건 · 제공 평균 ${this.metrics.averageWait.toFixed(1)}분`,
       full: `${this.format.seats}석 · 체류 ${this.format.stay}분`,
-      delivery: `배달 적합도 ${Math.round(this.menus[0].delivery * 100)}/100 · 플랫폼 주문 경험`,
-      taste: `대표 메뉴 기본 품질 ${Math.round(this.menus[0].quality * 100)}/100`,
+      delivery: `정상 제공 ${this.metrics.served}명 중 배달 경험 불만`,
+      taste: `정상 제공 ${this.metrics.served}명 중 맛·품질 불만`,
       atmosphere: `${this.format.name} 공간 적합도 ${Math.round(ATMOSPHERE[this.format.id] * 100)}/100`,
     };
     const denominators = {
@@ -2089,18 +2125,6 @@ export class RestaurantSimulation {
       taste: Math.max(1, this.metrics.served),
       atmosphere: Math.max(1, this.metrics.served),
     };
-    const impactWeights = {
-      // 지나가는 사람보다 이미 선택·주문한 손님을 놓친 원인을 더 무겁게 진단한다.
-      awareness: 0.55,
-      price: 1,
-      value: 1.05,
-      menu: 1,
-      wait: 1.15,
-      full: 1.15,
-      delivery: 1.05,
-      taste: 1.05,
-      atmosphere: 1.05,
-    };
     const topLosses = Object.entries(this.metrics.losses)
       .map(([id, count]) => ({
         id,
@@ -2108,16 +2132,15 @@ export class RestaurantSimulation {
         count,
         detail: lossDetails[id],
         rate: count / denominators[id],
-        score: count / denominators[id] * impactWeights[id],
       }))
       .filter((item) => item.count > 0)
-      .sort((a, b) => b.score - a.score || b.count - a.count || a.id.localeCompare(b.id));
+      .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));
     const topLoss = topLosses[0] ?? { id: "awareness", label: "매장 인지", count: 0 };
     const verdicts = {
       awareness: "사람은 지나갔지만, 가게가 선택지에 들어오지 못했습니다.",
       price: "수요가 없는 게 아니라, 가격의 이유가 보이지 않았습니다.",
       value: "구매는 일어났지만 양과 구성에서 가격의 이유가 약했습니다.",
-      menu: "상권의 식사 목적과 대표 메뉴가 어긋났습니다.",
+      menu: "메뉴 구성이 일부 손님의 방문 목적과 맞지 않았습니다.",
       wait: "수요는 충분했습니다. 지금 필요한 것은 홍보가 아니라 처리능력입니다.",
       full: "주방보다 좌석 회전이 먼저 막혔습니다.",
       delivery: "주문은 만들었지만 도착 품질이 재주문을 막았습니다.",
@@ -2143,7 +2166,7 @@ export class RestaurantSimulation {
       metrics: structuredClone(this.metrics),
       topLosses,
       topLoss,
-      verdict: verdicts[topLoss.id],
+      verdict: `관측: ${topLoss.label} ${topLoss.count}명. 가설: ${verdicts[topLoss.id]} 조건 비교로 확인하세요.`,
       fitReveals,
       stationMinutes: { ...this.stationMinutes },
       influencerNote: this.influencerNote ?? null,
@@ -2164,8 +2187,15 @@ export class RestaurantSimulation {
         this.upgrades.push(action.id);
       }
     }
-    this.cash -= totalCost;
+    this.spendOnce(totalCost, actions.map((action) => action.name).join(" · "));
     return totalCost;
+  }
+
+  spendOnce(cost, label, investment = false) {
+    if (!Number.isFinite(cost) || cost < 0) throw new Error("지출은 0 이상의 유한한 금액이어야 합니다");
+    this.cash -= cost;
+    this.monthSpending[investment ? "investment" : "expense"] += cost;
+    if (cost) this.monthSpending.entries.push({ label, cost, investment });
   }
 
   snapshot() {
@@ -2214,7 +2244,7 @@ export class RestaurantSimulation {
       demandFactor: this.demandFactor,
       openHour: this.openHour,
       closeHour: this.closeHour,
-      ownerMinutesToday: this.ownerBaseMinutes() + this.ownerInterventionMinutes,
+      ownerMinutesToday: this.ownerInterventionMinutes,
       ownerStation: this.ownerStation,
       stationActive: this.stationActive(),
       stationMoving: this.onDuty() && this.gameMinute < this.stationArrivesAt,
@@ -2244,9 +2274,15 @@ export class RestaurantSimulation {
     let guard = 0;
     const maxIterations = Math.ceil(260 / Math.max(1e-4, stepSeconds * 4)) + 100;
     while (!this.finished && guard < maxIterations) {
+      if (this.activeDilemma) {
+        const option = this.activeDilemma.options.find((item) => item.default) ?? this.activeDilemma.options.at(-1);
+        this.resolveDilemma(option.id);
+        this.setSpeed(4);
+      }
       this.update(stepSeconds);
       guard += 1;
     }
+    if (!this.finished) throw new Error("자동 영업이 마감까지 진행되지 않았습니다");
     return this.lastReport;
   }
 }

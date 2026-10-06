@@ -76,6 +76,13 @@ ol, ul { padding: 0; list-style: none; }
   to { opacity: 1; transform: none; }
 }
 
+.experiment-panel { margin: 24px 0; }
+.experiment-panel p { line-height: 1.6; color: var(--steam-dim); margin: 12px 0; }
+.experiment-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; }
+.experiment-controls select { min-width: 0; max-width: 100%; padding: 12px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 6px; }
+.comparison-table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+.comparison-table th, .comparison-table td { padding: 12px; text-align: left; border-bottom: 1px solid var(--line); font-size: 15px; font-variant-numeric: tabular-nums; }
+
 /* ── 유틸 타이포 ───────────────────────────────────────────── */
 
 .meta-label, .metric-label, .eyebrow, .section-kicker, .kicker,
@@ -116,6 +123,7 @@ ol, ul { padding: 0; list-style: none; }
 .app-shell {
   min-height: 100dvh;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 62px 1fr 30px;
   background:
     radial-gradient(120% 80% at 50% -10%, rgba(217, 164, 65, 0.07), transparent 60%),
@@ -195,7 +203,7 @@ ol, ul { padding: 0; list-style: none; }
 }
 .icon-button:hover, .icon-button.active { color: var(--ground-deep); background: var(--crema); border-color: var(--crema); }
 
-.screen { position: relative; min-height: 0; }
+.screen { position: relative; min-height: 0; min-width: 0; }
 
 .footer-strip {
   display: flex;
@@ -1089,7 +1097,8 @@ ol, ul { padding: 0; list-style: none; }
 
 /* ── 마감 리포트 ──────────────────────────────────────────── */
 
-.report-screen { display: grid; gap: 11px; padding: 13px clamp(16px, 3vw, 44px) 14px; }
+.report-screen { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 11px; padding: 13px clamp(16px, 3vw, 44px) 14px; }
+.report-screen > *, .report-header > * { min-width: 0; }
 
 .report-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 26px; flex-wrap: wrap; }
 .report-title { font-size: clamp(2.2rem, 5.2vw, 4rem); font-weight: 800; letter-spacing: -0.05em; line-height: 0.92; text-wrap: balance; }
@@ -1132,7 +1141,9 @@ ol, ul { padding: 0; list-style: none; }
 .ledger-row.tip b { color: var(--jade); }
 
 .report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
-.report-panel { display: grid; gap: 8px; align-content: start; padding: 13px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.report-panel { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 8px; align-content: start; padding: 13px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.report-panel > * { min-width: 0; }
+.event-recap, .event-recap-list, .event-recap-item, .event-recap-item > * { min-width: 0; }
 .report-panel h2 { font-size: 1.25rem; font-weight: 700; }
 
 .funnel-chart { display: grid; gap: 7px; }
@@ -1707,8 +1718,8 @@ ol, ul { padding: 0; list-style: none; }
   border-radius: var(--radius);
   background: var(--surface);
 }
-.event-recap-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
-.event-recap-item { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; padding: 12px 14px; border-left: 2px solid var(--crema); background: var(--surface-2); }
+.event-recap-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; }
+.event-recap-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; padding: 12px 14px; border-left: 2px solid var(--crema); background: var(--surface-2); }
 .event-recap-item span { font-size: 1.5rem; }
 .event-recap-item strong { display: block; font-size: 0.9375rem; }
 .event-recap-item p { margin-top: 3px; font-size: 0.75rem; line-height: 1.5; color: var(--muted); }
@@ -1824,7 +1835,7 @@ ol, ul { padding: 0; list-style: none; }
 
 /* ── 월 원장 (실매출 → 차감 → 남은 돈) ───────────────────── */
 
-.ledger-sheet { display: grid; gap: 2px; }
+.ledger-sheet { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 2px; }
 
 .ledger-top, .ledger-bottom {
   display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
@@ -2963,3 +2974,112 @@ canvas { image-rendering: pixelated; }
   .mobile-hint:not([hidden]) { display: flex; }
   .app-shell { padding-top: 68px; }
 }
+
+/* 읽을 수 있는 경영 화면 — 축소 대신 정보 우선순위와 자연스러운 스크롤 */
+:root { --muted: #c1b09c; --faint: #a4917b; --jade: #7dcc9d; --clay: #f08c7b; }
+.quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.quick-grid h2 { font-size: 20px; margin-bottom: 14px; }
+.capital-list { display: grid; gap: 10px; }
+.setup-note { padding: 20px; margin-top: 20px; background: var(--surface-2); border: 1px solid var(--line); line-height: 1.7; color: var(--steam-dim); }
+.setup-note label { display: grid; gap: 8px; margin-top: 16px; }
+.setup-note select { width: 100%; padding: 12px; background: var(--ground); border: 1px solid var(--line); }
+.hero-copy #advanced-setup { margin: 18px 0; font-size: 15px; }
+.wizard .repday { padding: 18px; min-height: 88px; }
+.wizard .repday span, .choice-sub, .research-text, .detail-desc, .detail-warning, .hours-note, .brief-hint { font-size: 15px; line-height: 1.6; }
+.repday b, .choice-name { font-size: 17px; line-height: 1.4; }
+.choice-meta, .lease-note, .research-title, .foot-hint, .preview-note, .chip, .meta-label, .metric-label, .card-label { font-size: 13px; letter-spacing: .03em; }
+.wizard-head { padding-top: 24px; }
+.wizard-foot { padding-top: 18px; }
+.wizard-foot .cta { min-height: 54px; }
+.chapter-strip { display: flex; justify-content: space-between; gap: 16px; padding: 14px 18px; color: var(--steam-dim); background: var(--surface); font-size: 14px; border-bottom: 1px solid var(--line); }
+.chapter-strip > span { color: var(--crema-soft); font-weight: 700; flex-shrink: 0; }
+.decision-board { display: grid; grid-template-columns: 1fr auto; gap: 12px 24px; padding: 22px; margin: 12px 0; background: var(--surface-2); border-left: 4px solid var(--crema); }
+.decision-board h2 { margin: 8px 0; font-size: 23px; }
+.decision-board p, .rail-description { color: var(--steam-dim); font-size: 15px; line-height: 1.6; }
+.decision-kpis { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 18px 38px; padding-top: 12px; border-top: 1px solid var(--line); }
+.decision-kpis span { font-size: 14px; color: var(--steam-dim); }
+.decision-kpis b { font-size: 20px; margin-left: 10px; color: var(--steam); font-variant-numeric: tabular-nums; }
+.ops-grid.management-mode { grid-template-columns: minmax(0, 1fr) 320px; min-height: 600px; }
+.management-mode .interior-column { display: none; }
+.management-mode .scene-panel { height: 650px; }
+.ops-rail { max-height: none; overflow: visible; gap: 12px; }
+.rail-card h2 { font-size: 18px; }
+.meter-line { grid-template-columns: 78px minmax(0, 1fr) 56px; }
+.meter-line .metric-label { white-space: nowrap; }
+.rail-description { margin: 12px 0; }
+.management-tools { display: grid; gap: 8px; }
+.management-tools button { text-align: left; font-size: 15px; padding: 12px; min-height: 44px; }
+.station-dock { flex-wrap: wrap; }
+.station-button { min-width: 62px; min-height: 48px; }
+.speed-button, .notebook-button, #toggle-arcade { min-height: 44px; }
+.speed-button { min-width: 44px; }
+.station-name, .speed-button, .work-label { font-size: 14px; }
+.hud-bottom { background: rgba(12,9,8,.86); padding: 10px; gap: 10px; }
+.hud-bottom .live-kpis { display: none; }
+.feed-item { font-size: 14px; }
+.report-kpis { gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+.report-kpi { padding: 16px; min-width: 0; }
+.report-kpi strong { font-size: clamp(21px, 2.2vw, 30px); }
+.kpi-delta, .ledger-line, .ledger-line small, .ledger-line em, .coach-item p, .coach-item em, .report-panel p, .cash-reconciliation p, .event-recap-item p { font-size: 15px; line-height: 1.6; }
+.report-screen { gap: 24px; padding: 28px clamp(16px, 3vw, 44px); }
+summary { cursor: pointer; min-height: 44px; line-height: 1.5; }
+button:disabled { cursor: not-allowed; }
+@media (max-width: 940px) {
+  .ops-grid.management-mode { grid-template-columns: 1fr; }
+  .management-mode .scene-panel { height: 540px; }
+  .quick-grid { grid-template-columns: 1fr; }
+  .chapter-strip { flex-direction: column; gap: 8px; }
+  .decision-board { grid-template-columns: 1fr; padding: 18px; }
+  .decision-board h2 { font-size: 21px; }
+  .decision-kpis { gap: 12px; }
+  .decision-kpis b { font-size: 18px; }
+  .scene-hud { padding: 8px; }
+  .station-dock { width: 100%; justify-content: flex-start; }
+  .topbar { gap: 6px; }
+  .brand-copy small { display: none; }
+  .topbar-actions { gap: 4px; }
+  .icon-button { padding: 8px; font-size: 12px; min-height: 44px; }
+  .app-shell { padding-top: 0; }
+  .mobile-hint { position: static; padding: 12px 44px 12px 14px; color: var(--steam-dim); }
+  .report-grid, .report-kpis, .choice-grid.cols-3, .choice-grid.cols-4 { grid-template-columns: minmax(0, 1fr); }
+  .hero-copy h1 { font-size: clamp(48px, 14vw, 90px); }
+  .comparison-table th, .comparison-table td { padding: 8px 4px; font-size: 13px; }
+}
+@media (max-width: 480px) {
+  .ledger-line { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+  .ledger-line span { grid-column: 1 / -1; }
+  .ledger-top, .ledger-bottom { flex-direction: column; align-items: stretch; }
+  .report-actions { flex-wrap: wrap; }
+  .report-actions > button { max-width: 100%; }
+  .district-picker { grid-template-columns: 1fr; }
+  .ct-now { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .ct-label { white-space: nowrap; }
+  .ct-label br { display: none; }
+}
+.source-entry { padding: 18px 0; border-bottom: 1px solid var(--line); }
+.source-entry h3 { margin: 0 0 10px; font-size: 18px; }
+.source-dialog p { font-size: 15px; line-height: 1.7; color: var(--steam-dim); }
+.source-dialog small { color: var(--crema-soft); font-size: 13px; }
+.source-dialog a { color: var(--crema); display: inline-block; padding: 12px 0; }
+.source-dialog table { width: 100%; text-align: left; }
+.source-dialog th, .source-dialog td { padding: 10px; }
+.footer-strip { flex-wrap: wrap; }
+.source-strip { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.source-strip button { min-height: 44px; }
+.coach-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.coach-card { border: 1px solid var(--line); background: var(--surface-2); padding: 20px; }
+.coach-card h3 { font-size: 19px; margin-bottom: 12px; }
+.coach-card dl { font-size: 15px; line-height: 1.6; margin: 16px 0; }
+.coach-card dt { color: var(--muted); margin-top: 8px; }
+.coach-card dd { margin: 0; color: var(--steam); font-variant-numeric: tabular-nums; }
+.coach-card small { display: block; font-size: 13px; line-height: 1.6; margin-bottom: 18px; color: var(--muted); }
+.coach-card button { white-space: normal; min-height: 48px; width: 100%; }
+@media (max-width: 940px) { .coach-cards { grid-template-columns: 1fr; } }
+.learning-dialog form, #class-form { display: grid; gap: 18px; margin-top: 20px; }
+.learning-dialog label, #class-form label { display: grid; gap: 10px; font-size: 16px; line-height: 1.6; }
+.learning-dialog input, .learning-dialog select, #class-form input, #class-form select, #class-filter, #teacher-paste { width: 100%; min-height: 48px; padding: 12px; color: var(--steam); background: var(--ground); border: 1px solid var(--line); font-size: 16px; }
+.learning-dialog p { font-size: 15px; line-height: 1.7; margin: 18px 0; }
+.learning-dialog .consent-label { display: flex; align-items: flex-start; }
+.consent-label input { width: 24px; min-height: 24px; flex-shrink: 0; }
+#class-link { overflow-wrap: anywhere; }
+#teacher-stats strong { font-size: 21px; }
