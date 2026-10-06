@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createOpeningPractice } from "../src/tutorial.js";
-import { experimentChoices, applyCondition, compareCondition } from "../src/experiment.js";
+import { experimentChoices, applyCondition, compareCondition, compareBudget, laborTradeoff } from "../src/experiment.js";
 import { buildCoach } from "../src/coach.js";
-import { FORMATS, MENUS } from "../src/data.js";
+import { FORMATS, MENUS, STAFFING_PLANS, OWNER_ROLES, SUPPLY_MODES } from "../src/data.js";
 
 test("opening practice creates a seat and serves a real order, counting labor", () => {
   const sim = createOpeningPractice();
@@ -64,4 +64,60 @@ test("bakery menu experiments honor installed equipment and the two-item supply 
     const [old, next] = item.id.split(">");
     if (bakery.some(menu => menu.id === next)) assert(bakery.some(menu => menu.id === old));
   }
+});
+
+test("staffing changes require paid staff, including legacy saves and supplied bakery", () => {
+  const sim = createOpeningPractice();
+  sim.ownerRole = OWNER_ROLES.find(item => item.id === "peak");
+  sim.hires = [];
+  const full = STAFFING_PLANS.find(item => item.id === "full");
+  const trim = STAFFING_PLANS.find(item => item.id === "trim");
+  sim.staffing = full;
+  const minutes = sim.ownerBaseMinutes();
+  sim.staffing = trim; // old save with invalid no-staff plan
+  assert.equal(sim.ownerBaseMinutes(), minutes);
+  assert(!experimentChoices(sim.exportState()).some(item => item.key === "staffing"));
+  assert.throws(() => applyCondition(sim, { key: "staffing", id: "lean" }));
+  assert(!buildCoach(sim.exportState(), { monthNumber: 1, losses: { wait: 20 } }).some(card => card.id === "staffing"));
+  assert.equal(sim.setStaffing(trim).id, "full");
+  sim.addHire({ role: "홀 알바", hours: 4, wageMultiplier: 1 });
+  assert(experimentChoices(sim.exportState()).some(item => item.key === "staffing" && item.label.includes("+2시간")));
+  applyCondition(sim, { key: "staffing", id: "trim" });
+  assert.equal(sim.ownerBaseMinutes(), minutes + 120);
+  sim.removeHire(0);
+  assert.equal(sim.ownerBaseMinutes(), minutes);
+  sim.hires = [{ role: "베이커", hours: 8, wageMultiplier: 1.35 }];
+  sim.supplyMode = SUPPLY_MODES.find(item => item.id === "buy");
+  assert(!experimentChoices(sim.exportState()).some(item => item.key === "staffing"));
+  assert.equal(sim.ownerBaseMinutes(), minutes);
+});
+
+test("labor interpretation handles more work, saved time and no hour difference", () => {
+  const describe = (profit, hours) => laborTradeoff({ delta: { profit, ownerMinutes: hours * 60 } });
+  assert(describe(3.1837, 62).includes("₩514"));
+  assert(describe(-10, 20).includes("이익은 늘지"));
+  assert(describe(-10, -20).includes("₩5,000"));
+  assert(describe(10, -20).includes("이익도 줄지"));
+  assert(describe(10, 0).includes("거의 같습니다"));
+});
+
+test("personal budget changes only rent and cash assumptions, rejects invalid money", () => {
+  const summary = { monthNumber: 1, profit: 400, costs: { rent: 200 }, ownerMinutes: 12000 };
+  const inputs = { capital: 9000, investment: 8000, rent: 300, living: 400 };
+  const original = structuredClone({ summary, inputs });
+  const result = compareBudget(summary, inputs);
+  assert.equal(result.profit, 300);
+  assert.equal(result.afterLiving, -100);
+  assert.equal(result.openingCash, 1000);
+  assert.equal(result.runway, 10);
+  assert.equal(result.ownerHours, 200);
+  assert.deepEqual({ summary, inputs }, original);
+  assert.equal(compareBudget(summary, { ...inputs, investment: 10000 }).runway, 0);
+  assert.equal(compareBudget(summary, { ...inputs, living: 100 }).runway, null);
+  assert.equal(compareBudget(summary, { ...inputs, living: 300 }).runway, null);
+  assert.equal(compareBudget(summary, { ...inputs, investment: 8500 }).profit, result.profit);
+  for (const key of Object.keys(inputs)) for (const bad of [-1, NaN, Infinity, "300", null, 1000001]) {
+    assert.throws(() => compareBudget(summary, { ...inputs, [key]: bad }));
+  }
+  assert.throws(() => compareBudget({}, inputs));
 });

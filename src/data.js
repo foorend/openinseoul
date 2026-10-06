@@ -21,9 +21,9 @@ export const OWNER_HAIRS = [
 ];
 
 export const OWNER_STAT_DEFS = [
-  { id: "kind", name: "인성", icon: "🤝", description: "직원이 따르고 손님이 웃습니다. 홀 회전과 만족도가 좋아집니다." },
-  { id: "smart", name: "지성", icon: "📐", description: "원가를 계산할 줄 압니다. 재료비가 조금씩 덜 샙니다." },
-  { id: "charm", name: "외모", icon: "✨", description: "입구에 서면 지나가던 사람이 들어옵니다." },
+  { id: "kind", name: "서비스 역량", icon: "🤝", description: "게임 가정: 응대와 홀 정리로 회전과 만족도를 돕습니다." },
+  { id: "smart", name: "원가 관리", icon: "📐", description: "게임 가정: 재료 사용을 관리해 원가 누수를 줄입니다." },
+  { id: "charm", name: "고객 소통", icon: "✨", description: "게임 가정: 입구에서 가게를 알리고 방문을 돕습니다. 외형과 무관합니다." },
 ];
 export const OWNER_STAT_POOL = 10;  // 세 스탯 합계 (각 1에서 시작, 7점을 배분)
 export const OWNER_STAT_MAX = 5;
@@ -31,7 +31,7 @@ export const OWNER_STAT_MIN = 1;
 
 export const CAPITAL_OPTIONS = [
   { id: "tight", name: "월급 모은 전부", icon: "🪙", amount: 9000, description: "9,000만원. 보증금 내고 나면 숨이 짧습니다. 한 달만 삐끗해도 흔들려요." },
-  { id: "standard", name: "퇴직금까지 합쳐서", icon: "💼", amount: 15000, description: "1억 5천. 표준적인 창업 자금. 반년은 버틸 수 있습니다." },
+  { id: "standard", name: "퇴직금까지 합쳐서", icon: "💼", amount: 15000, description: "1억 5천. 개업비를 뺀 운전자금과 월 적자에 따라 버틸 수 있는 기간이 달라집니다." },
   { id: "backed", name: "부모님 찬스", icon: "🏦", amount: 24000, description: "2억 4천. 여유는 있지만, 갚아야 할 돈이라는 걸 잊으면 안 됩니다." },
 ];
 

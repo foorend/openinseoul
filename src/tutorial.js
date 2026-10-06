@@ -1,5 +1,5 @@
-import { DISTRICTS, FORMATS, MENUS } from "./data.js?release=20261006c";
-import { RestaurantSimulation, formatMoney } from "./sim.js?release=20261006c";
+import { DISTRICTS, FORMATS, MENUS } from "./data.js?release=20261006d";
+import { RestaurantSimulation, formatMoney } from "./sim.js?release=20261006d";
 
 // 설명용 고정 상황도 실제 엔진으로 계산한다. 캠페인·교육 점수에는 합산하지 않는다.
 export function createOpeningPractice() {

@@ -1,4 +1,4 @@
-import { DATA_VERSION } from "./data.js?release=20261006c";
+import { DATA_VERSION } from "./data.js?release=20261006d";
 
 export const SOURCES = [
   { id: "wage", title: "최저임금위원회 · 연도별 최저임금", period: "2026년", kind: "계산 적용", unit: "원/시간", url: "https://www.minimumwage.go.kr/minWage/policy/decisionMain.do", rule: "10,320원. 직원 기본시급의 하한과 사장 시간당 수익의 비교 기준. 사장에게 적용되는 법정 급여 판정은 아닙니다." },

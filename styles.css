@@ -1912,6 +1912,7 @@ ol, ul { padding: 0; list-style: none; }
   gap: 8px;
   margin-bottom: 18px;
 }
+.staffing-choice[hidden] { display: none; }
 .staffing-choice .repday em {
   display: block;
   margin-top: 6px;
@@ -3133,6 +3134,18 @@ body[data-view="report"] .toast-region, body[data-view="monthClose"] .toast-regi
 .experiment-panel select { width: 100%; min-width: 0; min-height: 48px; font-size: 16px; padding: 10px; color: var(--steam); background: var(--ground); border: 1px solid var(--line); }
 .experiment-decisions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
 .experiment-guidance { margin-block: 14px; }
+.labor-tradeoff { padding: 14px; border-left: 3px solid var(--crema); background: var(--surface-2); }
+.budget-panel input { width: 100%; min-width: 0; min-height: 48px; font-size: 16px; padding: 10px; color: var(--steam); background: var(--ground); border: 1px solid var(--line); }
+.budget-values { display: grid; grid-template-columns: 1fr auto; gap: 12px; margin: 18px 0; }
+.budget-values dd { margin: 0; font-variant-numeric: tabular-nums; }
+.budget-panel button { white-space: normal; }
+.setup-steps summary { align-content: center; }
+.setup-steps summary small { color: var(--muted); margin-left: 12px; }
+.setup-steps .step-rail { justify-content: flex-start; }
+.stat-btn { width: 44px; height: 44px; }
+.step-rail button, .back-control, .source-toggle, .footer-strip button, .mobile-hint button { min-height: 44px; min-width: 44px; }
+.decision-context summary { font-weight: 700; font-size: 16px; align-content: center; }
+.operations-screen .decision-context { grid-column: 1 / -1; }
 .opening-practice { width: min(720px, calc(100vw - 24px)); max-height: calc(100svh - 24px); overflow: auto; padding: 20px; color: var(--steam); background: var(--ground); border: 1px solid var(--line); }
 .opening-practice::backdrop { background: #000b; }
 .opening-practice header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -3152,7 +3165,7 @@ body[data-view="report"] .toast-region, body[data-view="monthClose"] .toast-regi
   .operations-screen .ops-rail { max-height: 100%; min-height: 0; }
 }
 @media (max-width: 940px) {
-  .operations-screen { display: flex; flex-direction: column; height: calc(100svh - 62px); min-height: 680px; padding: 6px 10px 178px; }
+  .operations-screen { display: flex; flex-direction: column; height: calc(100svh - 56px); min-height: 0; padding: 6px 10px 0; }
   .operations-screen .chapter-strip { padding: 6px 12px; display: block; font-size: 12px; }
   .operations-screen .chapter-strip > :last-child { display: none; }
   .operations-screen .decision-board { padding: 8px 12px; margin: 6px 0; gap: 6px; grid-template-columns: 1fr; flex-shrink: 0; }
@@ -3166,18 +3179,17 @@ body[data-view="report"] .toast-region, body[data-view="monthClose"] .toast-regi
   .operation-tabs { display: flex; flex-shrink: 0; gap: 8px; padding: 6px 0; }
   .operation-tabs button { min-height: 44px; padding: 8px 16px; }
   .operation-tabs button[aria-pressed="true"] { border-color: var(--steam); }
-  .operation-controls { position: fixed; top: auto; bottom: 0; left: 0; right: 0; padding: 8px 10px max(8px, env(safe-area-inset-bottom)); }
+  .operation-controls { position: static; order: 5; flex-shrink: 0; margin-top: 8px; padding: 8px 0 max(8px, env(safe-area-inset-bottom)); }
   .operation-controls .hud-bottom { flex-direction: column; gap: 6px; align-items: stretch; }
   .operation-controls .control-dock { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; padding: 1px; }
   .operation-controls .station-dock { grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: 4px; padding: 1px; }
   .operation-controls .station-dock button { padding: 5px; height: 46px; border-radius: 4px; }
   .operation-controls .station-name { font-size: 13px; }
   .operation-controls .station-icon { display: none; }
-  .operations-screen .ops-grid, .operations-screen .ops-grid.management-mode { grid-template-columns: 1fr; padding: 0; gap: 8px; flex: 1; min-height: 180px; }
-  .operations-screen .ops-grid .scene-panel, .operations-screen .ops-grid.management-mode .scene-panel { height: 100%; min-height: 180px; }
+  .operations-screen .ops-grid, .operations-screen .ops-grid.management-mode { grid-template-columns: 1fr; padding: 0; gap: 8px; flex: 1; min-height: 160px; }
+  .operations-screen .ops-grid .scene-panel, .operations-screen .ops-grid.management-mode .scene-panel { height: 100%; min-height: 160px; }
   .operations-screen .ops-rail { display: none; max-height: none; overflow: visible; }
-  .operations-screen[data-panel="management"] { height: auto; }
-  .operations-screen[data-panel="management"] .ops-rail { display: grid; }
+  .operations-screen[data-panel="management"] .ops-rail { display: grid; min-height: 0; max-height: 100%; overflow-y: auto; }
   .operations-screen[data-panel="management"] .scene-panel { display: none; }
   .operations-screen .hud-top { padding: 8px; }
   .operations-screen .day-clock { padding: 6px 10px; }
@@ -3198,6 +3210,28 @@ body[data-view="report"] .toast-region, body[data-view="monthClose"] .toast-regi
   .compact-report .report-panel { padding: 14px; }
   .opening-practice { padding: 14px; }
   .opening-practice h2 { font-size: 21px; }
+  .wizard-bar { gap: 6px; }
+  .wizard-head { padding-top: 6px; }
+  .capital-tracker .ct-now { justify-content: space-between; }
+  .capital-tracker .ct-now strong { font-size: 24px; }
+  .stat-row { flex-wrap: wrap; }
+  .budget-values { grid-template-columns: 1fr; gap: 6px; }
+  .budget-values dd { margin-bottom: 10px; }
+  .operations-screen:has(.decision-context[open]) { height: auto; }
+  .operations-screen:has(.decision-context[open]) .scene-panel { height: 260px; }
+}
+@media (max-width: 940px) and (max-height: 650px) {
+  .operations-screen .chapter-strip { display: none; }
+  .operations-screen .decision-board { margin: 0; padding: 0 8px; gap: 0; }
+  .operations-screen .decision-kpis { padding: 0 0 4px; gap: 4px 10px; }
+  .operations-screen .decision-kpis b { font-size: 14px; }
+  .operations-screen .day-clock { display: flex; gap: 8px; align-items: center; padding: 4px 6px; }
+  .operations-screen .day-clock strong { font-size: 16px; }
+  .operations-screen .day-clock .day-progress { display: none; }
+}
+@media (max-width: 940px) and (max-height: 480px) {
+  .operations-screen { height: auto; }
+  .operations-screen .ops-grid .scene-panel, .operations-screen .ops-grid.management-mode .scene-panel { height: 240px; }
 }
 @media (max-width: 480px) {
   .compact-report .report-kpis { grid-template-columns: 1fr; }

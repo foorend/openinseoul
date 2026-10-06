@@ -1,6 +1,6 @@
-import { DATA_VERSION, HOUR_PLANS, STAFFING_PLANS, OWNER_ROLES, MENUS, CUSTOMERS, getById } from "./data.js?release=20261006c";
-import { compareCondition, experimentChoices } from "./experiment.js?release=20261006c";
-import { RestaurantSimulation } from "./sim.js?release=20261006c";
+import { DATA_VERSION, HOUR_PLANS, STAFFING_PLANS, OWNER_ROLES, MENUS, CUSTOMERS, getById } from "./data.js?release=20261006d";
+import { compareCondition, experimentChoices } from "./experiment.js?release=20261006d";
+import { RestaurantSimulation } from "./sim.js?release=20261006d";
 
 export function buildCoach(saved, context) {
   const options = [
@@ -8,7 +8,8 @@ export function buildCoach(saved, context) {
     ["staffing", "직원 편성", STAFFING_PLANS, saved.data.staffing.id === "full" ? "trim" : "full", "급여 절감만 보지 말고 대기 이탈과 사장의 추가 노동을 함께 확인하세요."],
     ["ownerRole", "사장 근무", OWNER_ROLES, saved.data.ownerRole.id === "manager" ? "peak" : "manager", "사장이 빠진 시간에 직원과 설비가 처리할 수 있는 수요인지 비교하세요."],
   ];
-  const cards = options.map(([key, title, collection, id, explanation]) => {
+  const legal = experimentChoices(saved, context);
+  const cards = options.filter(([key, , , id]) => legal.some(item => item.key === key && item.id === id)).map(([key, title, collection, id, explanation]) => {
     const result = compareCondition(saved, context, { key, id });
     return { id: key, title, change: { key, id }, version: DATA_VERSION, seed: result.seed,
       from: getById(collection, result.from).name, to: getById(collection, id).name,
@@ -49,7 +50,7 @@ export function buildCoach(saved, context) {
     cards[0].explanation = "인지율은 그대로 두고 영업시간만 바꿔, 다른 시간대의 유입 기회를 비교합니다. 홍보 방식은 다음 경영 계획에서 따로 결정하세요.";
   } else if (["wait", "full"].includes(issue)) {
     cards[0].observation = `${issue === "wait" ? "대기" : "좌석 부족"} 이탈 ${losses[issue]}명. 인력 비용과 처리량의 교환 관계를 확인합니다.`;
-    cards[0].explanation = "혼잡한데 인력을 줄이면 어떤 손해가 생길까요? 감축을 권하는 처방이 아니라 이익·제공 인원·내 노동의 비교 가설입니다.";
+    cards[0].explanation = cards[0].id === "staffing" ? "혼잡한데 인력을 줄이면 어떤 손해가 생길까요? 감축을 권하는 처방이 아니라 이익·제공 인원·내 노동의 비교 가설입니다." : "감축할 직원이 없어 영업시간 또는 사장 근무를 비교합니다. 제공 인원과 내 노동도 함께 확인하세요.";
   } else cards[0].observation = issue ? "관측한 이탈을 참고해 운영 조건을 비교합니다. 직접 원인으로 확정한 처방은 아닙니다." : "관측된 이탈이 없어 원인을 단정하지 않습니다. 운영 조건 한 가지를 비교합니다.";
   return cards;
 }

@@ -23,7 +23,7 @@ import {
   REGULAR_NAMES,
   WEATHER,
   getById,
-} from "./data.js?release=20261006c";
+} from "./data.js?release=20261006d";
 
 const FORMAT_FIT = {
   solo_cafe: { office_worker: 1, cafe_studier: 0.7, mz_hotple: 0.55, local_resident: 0.82, delivery_customer: 0.6 },
@@ -70,6 +70,10 @@ export function hiredLaborCost(format, district, hourPlan, supplyMode, staffing,
   return (hires ?? format.hires)
     .filter((hire) => !(boughtIn && hire.role === "베이커"))
     .reduce((sum, hire) => sum + (district.hourlyWage * hire.wageMultiplier * hire.hours * scale * staffScale) / 10000, 0);
+}
+
+export function hasScheduledStaff(format, supplyMode, hires = format.hires) {
+  return hires.some(hire => hire.hours > 0 && !(supplyMode?.id === "buy" && hire.role === "베이커"));
 }
 
 export function phaseAt(gameMinute, district = null, weekend = false) {
@@ -431,14 +435,14 @@ export class RestaurantSimulation {
 
   // 다음 달부터 적용할 인력 편성을 바꾼다.
   setStaffing(plan) {
-    if (plan) this.staffing = plan;
+    if (plan) this.staffing = hasScheduledStaff(this.format, this.supplyMode, this.hires) ? plan : getById(STAFFING_PLANS, "full");
     return this.staffing;
   }
 
   ownerBaseMinutes() {
     const openHours = this.closeHour - this.openHour;
     // 직원 시간을 깎은 만큼 사장이 더 나온다 — 인건비는 사라지지 않고 사장에게 옮겨간다.
-    const hours = this.ownerRole.hoursPerDay + (this.staffing?.ownerExtraHours ?? 0);
+    const hours = this.ownerRole.hoursPerDay + (hasScheduledStaff(this.format, this.supplyMode, this.hires) ? this.staffing?.ownerExtraHours ?? 0 : 0);
     return Math.min(hours, openHours) * 60;
   }
 
@@ -627,7 +631,7 @@ export class RestaurantSimulation {
     staff += countHall(this.hires ?? this.format.hires) - countHall(this.format.hires);
     if (this.hasUpgrade("part_timer")) staff += 1;
     // 인력을 줄이면 실제로 홀에서 사람이 사라진다. 장부에서만 주는 게 아니다.
-    staff = Math.max(0, staff - (this.staffing?.staffLoss ?? 0));
+    staff = Math.max(0, staff - (hasScheduledStaff(this.format, this.supplyMode, this.hires) ? this.staffing?.staffLoss ?? 0 : 0));
     if (this.dayLabor.active) staff += 1;
     return staff;
   }
@@ -1662,7 +1666,7 @@ export class RestaurantSimulation {
     // 입구에 서 있으면 지나가는 사람에게 직접 말을 건다
     let doorPull = 0;
     if (agent.channel !== "delivery" && this.atStation("door")) {
-      // 외모 좋은 사장이 입구에 서면 발길이 한 번 더 멈춘다
+      // 고객 소통 역량이 높은 사장이 입구에서 방문을 돕는다 (게임 가정).
       doorPull = 0.22 * (1 + 0.08 * (this.ownerStats.charm - 3));
       if (this.flyersLeft > 0 && !agent.flyered) {
         agent.flyered = true;

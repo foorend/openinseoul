@@ -35,18 +35,18 @@ import {
   MENUS,
   OWNER_ROLES,
   getById,
-} from "./data.js?release=20261006c";
-import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost } from "./sim.js?release=20261006c";
-import { GameScene, HeroScene } from "./scene.js?release=20261006c";
-import { mountIllustration } from "./visuals.js?release=20261006c";
-import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261006c";
-import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261006c";
-import { Tutorial } from "./tutorial.js?release=20261006c";
-import { ARCADE_BY_STATION, FlyerRun } from "./arcade.js?release=20261006c";
-import { compareCondition, experimentChoices, applyCondition } from "./experiment.js?release=20261006c";
-import { sourceMarkup } from "./sources.js?release=20261006c";
-import { buildCoach, narrateCoach } from "./coach.js?release=20261006c";
-import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261006c";
+} from "./data.js?release=20261006d";
+import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost } from "./sim.js?release=20261006d";
+import { GameScene, HeroScene } from "./scene.js?release=20261006d";
+import { mountIllustration } from "./visuals.js?release=20261006d";
+import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261006d";
+import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261006d";
+import { Tutorial } from "./tutorial.js?release=20261006d";
+import { ARCADE_BY_STATION, FlyerRun } from "./arcade.js?release=20261006d";
+import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261006d";
+import { sourceMarkup } from "./sources.js?release=20261006d";
+import { buildCoach, narrateCoach } from "./coach.js?release=20261006d";
+import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261006d";
 
 const screen = document.querySelector("#screen");
 const topbarStatus = document.querySelector("#topbar-status");
@@ -289,7 +289,7 @@ function render() {
   else if (state.view === "monthPlan") renderImprovements();
   else if (state.view === "final") renderYearEnd();
   if (["report", "monthClose", "final"].includes(state.view)) compactReport();
-  if (state.learning && state.view !== "landing") screen.querySelector("section")?.insertAdjacentHTML("afterbegin", `<div class="source-strip">익명 수업 ${escapeHtml(state.learning.classCode)} · 공통 자본 1억 5천만원 · ${state.learning.goal === "hours" ? "사장 노동시간 비교" : "현금과 손익 구분"} <button class="text-button learning-open" type="button">교육 결과 저장</button></div>`);
+  if (state.learning && state.view !== "landing") screen.querySelector(state.view === "operations" ? ".ops-rail" : "section")?.insertAdjacentHTML("afterbegin", `<div class="source-strip">익명 수업 ${escapeHtml(state.learning.classCode)} · 공통 자본 1억 5천만원 · ${state.learning.goal === "hours" ? "사장 노동시간 비교" : "현금과 손익 구분"} <button class="text-button learning-open" type="button">교육 결과 저장</button></div>`);
   if (["wizard", "brief", "report", "monthClose", "monthPlan", "final"].includes(state.view)) screen.querySelector("section")?.insertAdjacentHTML("afterbegin", `<div class="source-strip">합성 상권 · 최저임금위 2026 / 국세청 기본세율 참고 <button class="text-button source-toggle" type="button">가정·원문·버전 확인</button></div>`);
   // 렌더 직후 두 프레임 뒤(폰트·캔버스 마운트 반영 후)에 화면을 맞춘다
   requestAnimationFrame(() => requestAnimationFrame(fitScreenToViewport));
@@ -837,9 +837,9 @@ function renderWizard() {
     <section class="wizard">
       <header class="wizard-bar">
         <button class="back-control" id="wizard-back" type="button"><span aria-hidden="true">←</span>${state.step === 0 ? "처음으로" : steps[state.step - 1].label}</button>
-        <ol class="step-rail">
+        <details class="setup-steps"><summary>${state.step + 1}/${steps.length} · ${step.label} <small>전체 단계</small></summary><ol class="step-rail">
           ${steps.map((item, index) => `<li class="${index === state.step ? "is-current" : ""} ${index < state.step || stepComplete(item.id) ? "is-done" : ""}"><button data-step="${index}" type="button" ${index > state.step && !stepComplete(step.id) ? "disabled" : ""}><b>${String(index + 1).padStart(2, "0")}</b><span>${item.label}</span></button></li>`).join("")}
-        </ol>
+        </ol></details>
         <div class="capital-tracker ${budgetDelta < 0 ? "is-flash" : ""}">
           <div class="ct-now"><span class="ct-label">남는<br />운전자금</span><strong class="${costs.remaining < 300 ? "is-danger" : ""}">${formatMoney(costs.remaining)}</strong></div>
           ${pageDiffLines.length ? `<div class="ct-diff">
@@ -1099,7 +1099,7 @@ function renderBrief() {
   const dayName = DAY_NAMES[(day - 1) % 7];
   const isOpeningDay = day === 1;
   const plan = getById(HOUR_PLANS, state.hourPlanId);
-  const laborFor = (candidate) => hiredLaborCost(sim.format, sim.district, candidate);
+  const laborFor = (candidate) => hiredLaborCost(sim.format, sim.district, candidate, sim.supplyMode, sim.staffing, sim.hires);
   topbarStatus.innerHTML = statusMarkup(`${monthInfo(state.campaign?.month ?? 1).name} ${isWeekend ? "주말" : "평일"} · 아침 브리핑`);
 
   screen.innerHTML = `
@@ -1176,7 +1176,7 @@ function renderBrief() {
             <div class="preview-row"><span>일 인건비 <small>보험·적립은 월말 별도</small></span><b>${formatMoney(laborFor(plan))}</b></div>
             <div class="preview-row"><span>월세 1/30</span><b>${formatMoney((sim.district.lease.monthlyRent * (sim.format.pyeong ?? 12)) / 12 / 30)}</b></div>
             <div class="preview-row is-total"><span>문 열기 전 이미 나간 돈</span><b>${formatMoney(laborFor(plan) + (sim.district.lease.monthlyRent * (sim.format.pyeong ?? 12)) / 12 / 30)}</b></div>
-            <p class="preview-note">이 금액을 넘겨야 오늘 흑자입니다.</p>
+            <p class="preview-note">영업 전 확정 비용입니다. 손익분기 매출이 아닙니다. 재료비·수수료·세금 적립과 월 정산 비용도 부담해야 이익이 남습니다.</p>
           </section>
 
           ${snapshot.activeCampaigns.length || snapshot.upgrades.length ? `
@@ -1318,7 +1318,7 @@ function renderOperations() {
   screen.innerHTML = `
     <section class="operations-screen enter-up">
       <div class="chapter-strip"><span>${chapterLabel(state.campaign.month)}</span><b>${state.campaignMode === "chapters" ? "3챕터 체험" : "12개월 경영"} · ${state.campaign.month}/12월</b></div>
-      <section class="decision-board"><div><span class="meta-label">지금의 병목 · 관측 기반</span><h2 id="bottleneck-title">첫 손님을 기다리는 중</h2><p id="bottleneck-detail">자동 배치가 기본입니다. 직접 자리를 바꿔도 미니게임은 열리지 않습니다.</p></div><button class="secondary-button" id="bottleneck-action" type="button">입구에 배치</button><div class="decision-kpis"><span>현금 <b id="board-cash">${formatMoney(snapshot.cash)}</b></span><span>매출 <b id="board-sales">0만원</b></span><span>내 노동 <b id="board-hours">0.0시간</b></span></div></section>
+      <section class="decision-board"><details class="decision-context"><summary><span id="bottleneck-title">첫 손님을 기다리는 중</span> · 대응 보기</summary><p id="bottleneck-detail">자동 배치가 기본입니다. 직접 자리를 바꿔도 미니게임은 열리지 않습니다.</p><button class="secondary-button" id="bottleneck-action" type="button">입구에 배치</button></details><div class="decision-kpis"><span>현금 <b id="board-cash">${formatMoney(snapshot.cash)}</b></span><span>매출 <b id="board-sales">0만원</b></span><span>내 노동 <b id="board-hours">0.0시간</b></span></div></section>
       <div class="ops-grid ${state.managementOnly ? "management-mode" : ""}">
       <div class="interior-column" id="arcade-column">
         <div class="interior-head"><span class="meta-label">MINIGAME</span><strong>사장의 자리 — 여기서 뜁니다</strong></div>
@@ -2388,7 +2388,49 @@ function experimentMarkup() {
       <label for="experiment-prediction">1. 월 영업이익이 어떻게 바뀔까요?</label><select id="experiment-prediction" required><option value="">내 예상 선택</option><option value="up">늘어난다</option><option value="same">같다</option><option value="down">줄어든다</option></select>
       <button class="primary-button" id="run-experiment" type="submit">2. 같은 조건으로 비교</button>
     </form><div id="experiment-results" aria-live="polite"></div>
-  </details>`;
+  </details>${budgetComparisonMarkup()}`;
+}
+
+function budgetComparisonMarkup() {
+  const month = state.campaign?.months.at(-1);
+  if (!month) return '<p class="budget-unavailable">내 월세·초기 투자금·생활비 비교는 첫 월 마감 후 열립니다.</p>';
+  return `<details class="report-panel budget-panel"><summary>내 조건으로 계산 · ${month.monthNumber}월 장부 기준</summary>
+    <p>월세만 바꾸고 매출·수요·인력·기존 대출 이자는 그대로 둡니다. 초기 투자금은 남는 준비자금만 바꿉니다. 게임에는 적용되지 않으며 실제 창업 수익 예측이 아닙니다.</p>
+    <form id="budget-form" class="experiment-controls">${[["capital", "준비한 총자금 (기존 대출 포함)"], ["investment", "초기 총투입금 (보증금·권리금·시설·개업비 포함)"], ["rent", "점포 전체 월세 (평당 아님)"], ["living", "매달 필요한 생활비"]].map(([key, label]) => `<label for="budget-${key}">${label} · 만원</label><input id="budget-${key}" name="${key}" type="number" inputmode="decimal" min="0" max="1000000" step="0.01" required />`).join("")}
+    <button class="primary-button" type="submit">내 조건 비교하기</button></form><div id="budget-results" aria-live="polite"></div></details>`;
+}
+
+function mountBudgetComparison() {
+  const form = document.querySelector("#budget-form");
+  if (!form) return;
+  const campaign = state.campaign;
+  const month = campaign.months.at(-1);
+  const initial = campaign.initialSettings ?? state;
+  const defaults = campaign.budgetInputs ?? { capital: getById(CAPITAL_OPTIONS, initial.capitalId ?? "standard").amount + (initial.loanUnits ?? 0) * LOAN_UNIT, investment: campaign.setupOutflow, rent: month.costs.rent, living: 250 };
+  for (const [key, value] of Object.entries(defaults)) if (form.elements.namedItem(key)) form.elements.namedItem(key).value = Number(value).toFixed(2);
+  const output = document.querySelector("#budget-results");
+  const read = () => Object.fromEntries(["capital", "investment", "rent", "living"].map(key => [key, form.elements.namedItem(key).valueAsNumber]));
+  const render = () => {
+    if (!form.reportValidity()) return;
+    try {
+      const result = compareBudget(month, read());
+      const runway = result.openingCash < 0 ? "개업 전 자금 부족 — 준비자금 또는 투자금을 다시 확인하세요." : result.runway === null ? "이 단순 가정에서는 매월 자금이 줄지 않습니다. 생존 기간이나 성공을 보장하지 않습니다." : `같은 월 손익·생활비가 반복되면 약 ${result.runway.toFixed(1)}개월 후 준비자금 소진. 계절·추가 투자·연말 세금에 따라 짧아질 수 있습니다.`;
+      const lines = [`OPEN IN SEOUL · 내 조건 비교 · ${DATA_VERSION}`, `${month.monthNumber}월 합성 장부 기준 / 실제 창업 수익 예측 아님`,
+        `준비 총자금 ${formatMoney(result.inputs.capital)} / 초기 총투입금 ${formatMoney(result.inputs.investment)}`,
+        `월세 ${formatMoney(result.inputs.rent)} / 생활비 ${formatMoney(result.inputs.living)}`,
+        `기준 월 영업이익 ${formatMoney(result.baselineProfit)} / 기준 월세 ${formatMoney(result.baselineRent)}`,
+        `변경 월 영업이익 ${formatMoney(result.profit)} / 사장 노동 ${result.ownerHours.toFixed(1)}시간 (변경 없음)`,
+        `개업 후 준비자금 ${formatMoney(result.openingCash)} / 생활비 차감 후 월 잔여 ${formatMoney(result.afterLiving)}`, runway,
+        "월세만 변경. 매출·수요·인력·기존 대출 이자 유지. 연말 소득세·대출 원금 상환·추가 투자는 미반영. 초기 투자금은 월 비용에 중복 차감하지 않음. 생활비는 사업 비용이 아닌 별도 인출 가정."];
+      output.innerHTML = `<p>기준 월세 ${formatMoney(result.baselineRent)} → 내 월세 ${formatMoney(result.inputs.rent)}</p><dl class="budget-values"><dt>변경 월 영업이익</dt><dd>${formatMoney(result.profit)}</dd><dt>생활비 차감 후 월 잔여</dt><dd>${formatMoney(result.afterLiving)}</dd><dt>개업 후 준비자금</dt><dd>${formatMoney(result.openingCash)}</dd><dt>사장 노동 (변경 없음)</dt><dd>${result.ownerHours.toFixed(1)}시간</dd></dl><p>${runway}</p><p>${lines.at(-1)}</p><button class="secondary-button" id="export-budget" type="button">입력·결과·가정 텍스트 저장</button>`;
+      output.querySelector("#export-budget").onclick = () => downloadFile("open-in-seoul-my-budget.txt", lines.join("\n"), "text/plain;charset=utf-8");
+      campaign.budgetInputs = result.inputs;
+      saveProgress();
+    } catch (error) { output.textContent = error.message; }
+  };
+  form.onsubmit = event => { event.preventDefault(); render(); };
+  form.oninput = () => { output.textContent = "입력이 바뀌었습니다. 비교하기를 다시 눌러 결과를 갱신하세요."; };
+  if (campaign.budgetInputs) render();
 }
 
 function coachMarkup() {
@@ -2397,7 +2439,7 @@ function coachMarkup() {
   const report = state.simulation.lastReport;
   const monthly = state.view !== "report";
   const losses = monthly ? campaign.months.at(-1)?.losses : report?.metrics.losses;
-  const signature = JSON.stringify([campaign.month, monthly, report?.day, losses]);
+  const signature = JSON.stringify(["staff-guard-v2", campaign.month, monthly, report?.day, losses]);
   campaign.coach ??= {};
   if (campaign.coachSignature !== signature || !campaign.coach[campaign.month]) {
     campaign.coach[campaign.month] = buildCoach(campaign.experimentBase, { monthNumber: campaign.month, businessTypeId: campaign.businessTypeId, loanAmount: campaign.loanAmount, bakeryGearBought: state.bakeryGearBought, losses, byType: report?.metrics.byType });
@@ -2405,7 +2447,7 @@ function coachMarkup() {
   }
   const cards = campaign.coach[campaign.month];
   const cardMarkup = (card, index) => `<article class="coach-card"><h3>${card.title}</h3><p>${escapeHtml(card.observation ?? "다른 운영 조건도 비교해 볼 수 있습니다.")}${monthly ? " (대표 영업일을 월 단위로 환산한 합성 결과)" : ""}</p><p><b>${escapeHtml(card.from)} → ${escapeHtml(card.to)}</b></p><p id="coach-text-${card.id}">${escapeHtml(card.explanation)}</p><button class="secondary-button" data-coach-mission="${index}" type="button">내 예상부터 비교하기</button></article>`;
-  return `<section class="report-panel evidence-coach"><span class="meta-label" id="coach-mode">계산 근거 코치 · 생성 AI 미연결</span><h2>다음엔 한 가지만 바꿔보세요.</h2>${cardMarkup(cards[0], 0)}<details><summary>다른 비교 가설 2개</summary>${cards.slice(1).map((card, index) => cardMarkup(card, index + 1)).join("")}</details><p id="mission-result" aria-live="polite"></p></section>`;
+  return `<section class="report-panel evidence-coach"><span class="meta-label" id="coach-mode">계산 근거 코치 · 생성 AI 미연결</span><h2>다음엔 한 가지만 바꿔보세요.</h2>${cardMarkup(cards[0], 0)}<details><summary>다른 비교 가설 ${cards.length - 1}개</summary>${cards.slice(1).map((card, index) => cardMarkup(card, index + 1)).join("")}</details><p id="mission-result" aria-live="polite"></p></section>`;
 }
 
 function mountCoach() {
@@ -2429,6 +2471,7 @@ function mountCoach() {
 }
 
 function mountExperiment() {
+  mountBudgetComparison();
   const form = document.querySelector("#experiment-form");
   if (!form) return;
   const campaign = state.campaign;
@@ -2444,29 +2487,37 @@ function mountExperiment() {
       ["내 노동", `${(result.before.ownerMinutes / 60).toFixed(1)}시간`, `${(result.after.ownerMinutes / 60).toFixed(1)}시간`, `${(result.delta.ownerMinutes / 60).toFixed(1)}시간`],
       ["정상 제공", result.before.served, result.after.served, result.delta.served],
     ].map(row => `<tr>${row.map(value => `<td>${value}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    <p class="labor-tradeoff">${escapeHtml(laborTradeoff(result))}</p>
     <label for="experiment-reflection">3. 이 결과의 영업이익 변화는?</label><select id="experiment-reflection"><option value="">표를 읽고 선택</option><option value="up">늘었다</option><option value="same">같았다</option><option value="down">줄었다</option></select>
+    <label for="experiment-reason">4. 내 선택에서 가장 중요한 것은? (정답 없음)</label><select id="experiment-reason"><option value="">판단 기준 선택</option><option value="income">생활비·남는 이익</option><option value="time">내 노동시간·휴식</option><option value="service">손님 제공·서비스</option><option value="verify">현장 확인 전 변경 보류</option></select>
     <p class="experiment-guidance" role="status">이익뿐 아니라 내 노동도 확인하고 선택하세요. 효과가 나쁘면 유지해도 미션을 완료합니다.</p>
     <div class="experiment-decisions">${campaign.month < 12 ? '<button class="secondary-button" data-decision="apply" disabled>다음 달에 적용</button>' : ""}<button class="secondary-button" data-decision="keep" disabled>현재 조건 유지</button></div>`;
     const reflection = output.querySelector("#experiment-reflection");
+    const reason = output.querySelector("#experiment-reason");
     reflection.value = draft.interpretation ?? "";
+    reason.value = draft.reason ?? "";
+    if (draft.choice && !draft.reason) reason.options[0].textContent = "이전 버전 · 판단 기준 미수집";
     const update = () => {
       draft.interpretation = reflection.value;
-      const valid = reflection.value === direction;
+      draft.reason = reason.value;
+      const valid = reflection.value === direction && !!reason.value;
       reflection.disabled = !!draft.choice;
+      reason.disabled = !!draft.choice;
       output.querySelectorAll("[data-decision]").forEach(button => { button.disabled = !valid || !!draft.choice; });
-      output.querySelector(".experiment-guidance").textContent = draft.choice ? `미션 완료 · ${draft.choice === "apply" ? "다음 달 적용 예약" : "현재 조건 유지"}. 예상과 실제 계산, 해석과 선택을 저장했습니다.` : !reflection.value ? "이익뿐 아니라 내 노동도 확인하고 선택하세요." : valid ? "맞게 읽었습니다. 노동시간 변화까지 고려해 적용 여부를 결정하세요." : "이익 차이의 부호를 다시 확인하세요. 매출과 이익은 다릅니다.";
+      output.querySelector(".experiment-guidance").textContent = draft.choice ? `미션 완료 · ${draft.choice === "apply" ? "다음 달 적용 예약" : "현재 조건 유지"}. ${draft.reason ? "예상·결과·해석·판단 기준을 저장했습니다." : "이전 버전 완료 기록을 보존했습니다. 판단 기준은 당시 수집하지 않았습니다."}` : !reflection.value ? "이익뿐 아니라 내 노동도 확인하고 선택하세요." : reflection.value !== direction ? "이익 차이의 부호를 다시 확인하세요. 매출과 이익은 다릅니다." : !reason.value ? "표를 맞게 읽었습니다. 이번 선택에서 중요한 판단 기준도 골라 주세요." : "같은 결과라도 내 목표에 따라 적용하거나 유지할 수 있습니다.";
       saveProgress();
     };
     reflection.onchange = update;
+    reason.onchange = update;
     output.querySelectorAll("[data-decision]").forEach(button => button.onclick = () => {
-      if (reflection.value !== direction || draft.choice) return;
+      if (reflection.value !== direction || !reason.value || draft.choice) return;
       draft.choice = button.dataset.decision;
       if (draft.choice === "apply") state.pendingExperiment = { ...result.change };
       else state.pendingExperiment = null;
       campaign.missions ??= [];
       const id = `${campaign.month}:${result.change.key}:${result.change.id}`;
       if (!campaign.missions.includes(id)) campaign.missions.push(id);
-      campaign.decisionMissions = [...(campaign.decisionMissions ?? []), { month: campaign.month, change: result.change, prediction: draft.prediction, actual: direction, interpretation: draft.interpretation, choice: draft.choice }].slice(-40);
+      campaign.decisionMissions = [...(campaign.decisionMissions ?? []), { month: campaign.month, change: result.change, prediction: draft.prediction, actual: direction, interpretation: draft.interpretation, reason: draft.reason, choice: draft.choice }].slice(-40);
       update();
     });
     update();
@@ -2608,7 +2659,7 @@ function renderImprovements() {
               <button class="hours-option ${option.id === state.hourPlanId ? "is-selected" : ""}" data-hours="${option.id}" type="button">
                 <b>${option.name}</b>
                 <span>${option.open}:00–${option.close}:00 · ${option.close - option.open}h</span>
-                <em>인건비 ${formatMoney(hiredLaborCost(sim.format, sim.district, option), true)}/일</em>
+                <em>인건비 ${formatMoney(hiredLaborCost(sim.format, sim.district, option, sim.supplyMode, sim.staffing, sim.hires), true)}/일</em>
               </button>`).join("")}
           </div>
 
@@ -2699,7 +2750,7 @@ function renderImprovements() {
           <div class="receipt">
             <div class="receipt-row"><span>현재 현금</span><strong>${formatMoney(sim.cash)}</strong></div>
             <div class="receipt-row"><span>선택 비용</span><strong>${formatMoney(selectedCost)}</strong></div>
-            <div class="receipt-row"><span>${plan.name} 일 인건비</span><strong>${formatMoney(hiredLaborCost(sim.format, sim.district, plan, sim.supplyMode, sim.staffing))}</strong></div>
+            <div class="receipt-row"><span>${plan.name} 일 인건비</span><strong>${formatMoney(hiredLaborCost(sim.format, sim.district, plan, sim.supplyMode, sim.staffing, sim.hires))}</strong></div>
             <div class="receipt-row total"><span>예상 잔액</span><strong>${formatMoney(sim.cash - selectedCost)}</strong></div>
           </div>
           ${previous && previous.cashAfter < 800 ? '<p class="cash-warning">운전자금이 얇습니다. 이번 달에 비용을 늘리면 다음 달 인건비를 못 낼 수 있습니다.</p>' : ""}
@@ -2770,8 +2821,7 @@ function renderImprovements() {
     setView("monthPlan");
   }));
   screen.querySelectorAll("[data-staffing]").forEach((button) => button.addEventListener("click", () => {
-    state.staffingId = button.dataset.staffing;
-    sim.setStaffing(getById(STAFFING_PLANS, state.staffingId));
+    state.staffingId = sim.setStaffing(getById(STAFFING_PLANS, button.dataset.staffing)).id;
     sounds.click();
     setView("monthPlan");
   }));
