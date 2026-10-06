@@ -35,18 +35,18 @@ import {
   MENUS,
   OWNER_ROLES,
   getById,
-} from "./data.js?release=20261006";
-import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost } from "./sim.js?release=20261006";
-import { GameScene, HeroScene } from "./scene.js?release=20261006";
-import { mountIllustration } from "./visuals.js?release=20261006";
-import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261006";
-import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261006";
-import { Tutorial } from "./tutorial.js?release=20261006";
-import { ARCADE_BY_STATION, FlyerRun } from "./arcade.js?release=20261006";
-import { compareCondition } from "./experiment.js?release=20261006";
-import { sourceMarkup } from "./sources.js?release=20261006";
-import { buildCoach, narrateCoach } from "./coach.js?release=20261006";
-import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261006";
+} from "./data.js?release=20261006c";
+import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost } from "./sim.js?release=20261006c";
+import { GameScene, HeroScene } from "./scene.js?release=20261006c";
+import { mountIllustration } from "./visuals.js?release=20261006c";
+import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261006c";
+import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261006c";
+import { Tutorial } from "./tutorial.js?release=20261006c";
+import { ARCADE_BY_STATION, FlyerRun } from "./arcade.js?release=20261006c";
+import { compareCondition, experimentChoices, applyCondition } from "./experiment.js?release=20261006c";
+import { sourceMarkup } from "./sources.js?release=20261006c";
+import { buildCoach, narrateCoach } from "./coach.js?release=20261006c";
+import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261006c";
 
 const screen = document.querySelector("#screen");
 const topbarStatus = document.querySelector("#topbar-status");
@@ -279,6 +279,7 @@ function fitScreenToViewport() {
 window.addEventListener("resize", () => fitScreenToViewport());
 
 function render() {
+  document.body.dataset.view = state.view;
   if (state.view === "landing") renderLanding();
   else if (state.view === "wizard") renderWizard();
   else if (state.view === "brief") renderBrief();
@@ -287,6 +288,7 @@ function render() {
   else if (state.view === "monthClose") renderMonthClose();
   else if (state.view === "monthPlan") renderImprovements();
   else if (state.view === "final") renderYearEnd();
+  if (["report", "monthClose", "final"].includes(state.view)) compactReport();
   if (state.learning && state.view !== "landing") screen.querySelector("section")?.insertAdjacentHTML("afterbegin", `<div class="source-strip">익명 수업 ${escapeHtml(state.learning.classCode)} · 공통 자본 1억 5천만원 · ${state.learning.goal === "hours" ? "사장 노동시간 비교" : "현금과 손익 구분"} <button class="text-button learning-open" type="button">교육 결과 저장</button></div>`);
   if (["wizard", "brief", "report", "monthClose", "monthPlan", "final"].includes(state.view)) screen.querySelector("section")?.insertAdjacentHTML("afterbegin", `<div class="source-strip">합성 상권 · 최저임금위 2026 / 국세청 기본세율 참고 <button class="text-button source-toggle" type="button">가정·원문·버전 확인</button></div>`);
   // 렌더 직후 두 프레임 뒤(폰트·캔버스 마운트 반영 후)에 화면을 맞춘다
@@ -1032,7 +1034,7 @@ function startCampaign() {
     hygiene: GAME_CONFIG.hygieneBase,
   });
   state.reports = [];
-  if (state.quickSetup) state.tutorialShown = true;
+  state.tutorialShown = false;
   state.campaign = {
     runId: crypto.randomUUID(),
     learning: state.learning ? { ...structuredClone(state.learning), post: null } : null,
@@ -1275,21 +1277,21 @@ function crowdInfoFor(sim) {
 
 // 미니게임은 클릭 또는 1·2·3 키로만 열린다 — 자동 배치는 절대 열지 않는다.
 // 왼쪽 미니게임 자리에 열리고, 그동안 카페 씬과 크기를 맞바꾼다.
-function launchArcade(stationId, { practice = false } = {}) {
+function launchArcade(stationId) {
   const sim = state.simulation;
   if (!sim || state.arcadeOpen || sim.finished) return;
-  if (!practice && (document.querySelector(".tutorial-card") || sim.activeDilemma)) return;
+  if (document.querySelector("dialog[open]") || sim.activeDilemma) return;
   const GameClass = ARCADE_BY_STATION[stationId];
   if (!GameClass) return;
   state.arcadeOpen = true;
-  if (!practice) sim.setSpeed(1);
+  sim.setSpeed(1);
   const dock = document.querySelector("#arcade-dock");
   const home = document.querySelector("#arcade-home");
   if (home) home.hidden = true;
   document.querySelector(".ops-grid")?.classList.add("arcade-live");
   const game = new GameClass({
-    sim, sounds, practice,
-    crowd: practice ? { factor: 1, label: "연습 모드 — 결과는 반영되지 않습니다" } : crowdInfoFor(sim),
+    sim, sounds,
+    crowd: crowdInfoFor(sim),
     mount: dock ?? undefined,
     onEnd: (stats) => {
       state.arcadeOpen = false;
@@ -1297,10 +1299,6 @@ function launchArcade(stationId, { practice = false } = {}) {
       document.querySelector(".ops-grid")?.classList.remove("arcade-live");
       const homeAfter = document.querySelector("#arcade-home");
       if (homeAfter) homeAfter.hidden = false;
-      if (practice) {
-        state.tutorial?.advance();
-        return;
-      }
       if (stationId === "door") toast(`전단지 영업 끝 — ${stats.score ?? 0}점, 손님 ${stats.converted ?? 0}명 확보`);
       else if (stationId === "bar") toast(`키친 러시 끝 — ${stats.made ?? 0}잔을 직접 만들었습니다`);
       else toast(`홀 서빙 끝 — ${stats.handled ?? 0}건 처리`);
@@ -1377,7 +1375,7 @@ function renderOperations() {
             <div class="live-kpis"><div class="live-kpi"><span class="metric-label">CASH</span><strong id="hud-cash">${formatMoney(snapshot.cash, true)}</strong></div><div class="live-kpi"><span class="metric-label">SALES</span><strong id="hud-sales">${formatMoney(snapshot.metrics.revenue, true)}</strong></div></div>
           </div>
         </div>
-        <div class="dilemma-overlay" id="dilemma-overlay" hidden></div>
+        <dialog class="dilemma-overlay" id="dilemma-overlay" aria-label="돌발 상황 · 시간 정지" hidden></dialog>
       </div>
       <aside class="ops-rail">
         <section class="rail-card"><h2>직접 관리</h2><p class="rail-description">자리에 도착한 뒤 실행하세요. 모든 조작은 클릭·터치로 됩니다.</p><div class="management-tools"><button class="secondary-button" data-task="cleanMachine" type="button">키친 · 머신 청소</button><button class="secondary-button" data-task="restockCase" type="button">키친 · 재고 보충</button><button class="secondary-button" data-task="table" type="button">홀 · 빈 테이블 정리</button><button class="secondary-button" data-task="service" type="button">홀 · 손님 요청 응대</button></div><button class="text-button" id="toggle-arcade" type="button">${state.managementOnly ? "선택 미니게임 펼치기 (키보드)" : "미니게임 접고 경영에 집중"}</button></section>
@@ -1396,6 +1394,26 @@ function renderOperations() {
       </aside>
     </div></section>`;
 
+  const controls = document.createElement("nav");
+  controls.className = "operation-controls";
+  controls.setAttribute("aria-label", "영업 조작");
+  controls.append(screen.querySelector(".hud-bottom"));
+  screen.querySelector(".ops-grid").before(controls);
+  controls.before(screen.querySelector("#dilemma-overlay"));
+  const tabs = document.createElement("div");
+  tabs.className = "operation-tabs";
+  tabs.innerHTML = '<button class="secondary-button" aria-pressed="true" data-panel="scene">매장 보기</button><button class="secondary-button" aria-pressed="false" data-panel="management">관리·기록</button>';
+  controls.before(tabs);
+  tabs.querySelectorAll("button").forEach(button => button.onclick = () => {
+    screen.querySelector(".operations-screen").dataset.panel = button.dataset.panel;
+    tabs.querySelectorAll("button").forEach(item => item.setAttribute("aria-pressed", String(item === button)));
+  });
+  const replay = document.createElement("button");
+  replay.className = "text-button";
+  replay.textContent = "첫손님 연습 다시 하기";
+  replay.onclick = () => { state.tutorialShown = false; setView("operations"); };
+  screen.querySelector(".management-tools").after(replay);
+  document.querySelector("[data-speed='0']").setAttribute("aria-label", "일시정지");
   document.querySelector("#toggle-arcade").addEventListener("click", () => { state.managementOnly = !state.managementOnly; setView("operations"); });
   document.querySelector("#bottleneck-action").addEventListener("click", (event) => screen.querySelector(`[data-station="${event.currentTarget.dataset.station ?? "door"}"]`)?.click());
   screen.querySelectorAll("[data-task]").forEach((button) => button.addEventListener("click", () => {
@@ -1484,15 +1502,6 @@ function renderOperations() {
   });
   screen.querySelectorAll("[data-station]").forEach((button) => button.addEventListener("click", () => {
     const stationId = button.dataset.station;
-    // 튜토리얼 연습 스텝 — 이동 없이 바로 그 자리의 연습판을 연다
-    const tutStep = state.tutorial?.step;
-    if (tutStep?.practice) {
-      if (tutStep.practice === stationId && !state.arcadeOpen) {
-        state.tutorial.enterWaiting();
-        launchArcade(stationId, { practice: true });
-      }
-      return;
-    }
     const result = sim.moveOwner(stationId);
     if (result.ok) {
       state.pendingArcade = null;
@@ -1569,6 +1578,7 @@ function renderOperations() {
     showDilemma(dilemma);
   });
   gameScene = new GameScene(document.querySelector("#game-canvas"), { district: sim.district, format: sim.format, menus: sim.menus, restaurantName: state.restaurantName });
+  updateOperationsHud(sim.snapshot());
   beginOperationLoop();
   if (sim.activeDilemma) showDilemma(sim.activeDilemma);
 
@@ -1577,13 +1587,15 @@ function renderOperations() {
     state.tutorialShown = true;
     sim.setSpeed(0);
     document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 0));
+    saveProgress();
     const tutorial = new Tutorial({
+      Scene: GameScene,
       // 안내 문구가 실제 버튼에 적힌 자리 이름을 그대로 쓰게 한다.
       stationNames: sim.snapshot().stationNames,
       onFinish: ({ skipped }) => {
         state.tutorial = null;
         platform.logEvent("tutorial_finished", { skipped });
-        toast(skipped ? "튜토리얼을 건너뛰었습니다. 언제든 HOW TO에서 다시 볼 수 있어요." : "이제 진짜 영업입니다. 직접 뛰든, 자동으로 결과를 보든 — 선택은 사장 몫입니다.");
+        toast(skipped ? "연습을 건너뛰었습니다. 관리 화면에서 다시 할 수 있어요." : "이제 내 가게입니다. 오늘 남긴 돈과 내 노동을 마감에서 함께 확인하세요.");
         sim.setSpeed(1);
         state.lastSpeed = 1;
         document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 1));
@@ -1647,8 +1659,11 @@ function showDilemma(dilemma) {
       </div>
     </div>`;
   overlay.hidden = false;
+  if (!overlay.open) overlay.showModal();
+  overlay.oncancel = event => event.preventDefault();
   overlay.querySelectorAll("[data-option]").forEach((button) => button.addEventListener("click", () => {
     state.simulation.resolveDilemma(button.dataset.option);
+    overlay.close();
     overlay.hidden = true;
     sounds.click();
     const speed = state.lastSpeed ?? 1;
@@ -1783,6 +1798,7 @@ function updateOperationsHud(snapshot) {
   const byId = (id) => document.querySelector(`#${id}`);
   if (!byId("clock-value")) return;
   byId("clock-value").textContent = snapshot.clock;
+  screen.querySelectorAll("[data-speed]").forEach(button => button.classList.toggle("active", Number(button.dataset.speed) === state.simulation.speed));
   const bottleneck = snapshot.queueLength >= 4 ? { title: `주문 ${snapshot.queueLength}건이 기다립니다`, detail: "키친에 사장을 배치해 제조를 돕거나, 다음 계획에서 인력을 비교하세요.", station: "bar" }
     : snapshot.dirtyCount > 0 ? { title: `빈 테이블 ${snapshot.dirtyCount}개가 정리를 기다립니다`, detail: "홀에 배치한 뒤 ‘빈 테이블 정리’를 누르세요. 좌석을 늘리기 전 회전을 확인합니다.", station: "hall" }
     : snapshot.machineWear >= 0.25 ? { title: "머신 관리가 필요합니다", detail: "키친에 도착한 뒤 머신 청소를 누르세요. 관리 시간도 사장 노동에 포함됩니다.", station: "bar" }
@@ -2365,39 +2381,47 @@ function renderMonthClose() {
 function experimentMarkup() {
   const saved = state.campaign?.experimentBase;
   if (!saved) return "";
-  const groups = [["hourPlan", "영업시간", HOUR_PLANS], ["staffing", "인력 편성", STAFFING_PLANS], ["ownerRole", "사장 근무 예산", OWNER_ROLES]];
-  return `<section class="report-panel experiment-panel">
-    <span class="meta-label">ONE DECISION, SAME CITY · ${DATA_VERSION}</span>
-    <h2>하나만 바꾸면, 얼마나 달라질까?</h2>
-    <p>같은 시작 상태·손님 난수·날씨에서 두 조건 모두 사장 자동 배치로 계산합니다. 직접 플레이 결과와는 운영 방식이 다를 수 있습니다.</p>
-    <div class="experiment-controls"><label for="experiment-change">바꿀 조건</label><select id="experiment-change">${groups.map(([key, title, items]) => `<optgroup label="${title}">${items.filter((item) => item.id !== saved.data[key]?.id).map((item) => `<option value="${key}:${item.id}">${title} → ${item.name}</option>`).join("")}</optgroup>`).join("")}</select><button class="primary-button" id="run-experiment" type="button">같은 조건으로 비교</button></div>
-    <div id="experiment-results" aria-live="polite"></div>
-  </section>`;
+  return `<details class="report-panel experiment-panel"><summary>조건 하나 바꿔보기 · 예상 → 비교 → 결정</summary>
+    <p>같은 시작 상태·손님 난수·자동 운영으로 비교합니다. 실제 매출 예측이나 직접 플레이의 재현은 아닙니다.</p>
+    <form id="experiment-form" class="experiment-controls">
+      <label for="experiment-change">바꿀 조건</label><select id="experiment-change">${experimentChoices(saved, { bakeryGearBought: state.bakeryGearBought }).map(item => `<option value="${item.key}:${item.id}">${escapeHtml(item.label)}</option>`).join("")}</select>
+      <label for="experiment-prediction">1. 월 영업이익이 어떻게 바뀔까요?</label><select id="experiment-prediction" required><option value="">내 예상 선택</option><option value="up">늘어난다</option><option value="same">같다</option><option value="down">줄어든다</option></select>
+      <button class="primary-button" id="run-experiment" type="submit">2. 같은 조건으로 비교</button>
+    </form><div id="experiment-results" aria-live="polite"></div>
+  </details>`;
 }
 
 function coachMarkup() {
   const campaign = state.campaign;
   if (!campaign?.experimentBase) return "";
+  const report = state.simulation.lastReport;
+  const monthly = state.view !== "report";
+  const losses = monthly ? campaign.months.at(-1)?.losses : report?.metrics.losses;
+  const signature = JSON.stringify([campaign.month, monthly, report?.day, losses]);
   campaign.coach ??= {};
-  const cards = campaign.coach[campaign.month] ??= buildCoach(campaign.experimentBase, { monthNumber: campaign.month, businessTypeId: campaign.businessTypeId, loanAmount: campaign.loanAmount });
-  return `<section class="report-panel evidence-coach"><span class="meta-label" id="coach-mode">계산 근거 코치 · 생성 AI 미연결</span><h2>한 조건씩 비교한 세 가지 결정</h2><p>같은 시작 상태·손님 난수·자동 운영에서 계산한 가설입니다. 실제 선택의 인과적 기여도 순위나 매출 예측이 아닙니다. 월 이익 차이의 절댓값 순으로 보여줍니다.</p><div class="coach-cards">${cards.map((card, index) => `<article class="coach-card"><h3>${index + 1}. ${card.title}</h3><p>${escapeHtml(card.from)} → ${escapeHtml(card.to)}</p><dl><dt>월 영업이익</dt><dd>${formatMoney(card.facts.beforeProfit)} → ${formatMoney(card.facts.afterProfit)}<br />차이 ${formatMoney(card.facts.profitDelta)}</dd><dt>사장 노동</dt><dd>${card.facts.beforeHours.toFixed(1)} → ${card.facts.afterHours.toFixed(1)}시간 (${card.facts.hoursDelta > 0 ? "+" : ""}${card.facts.hoursDelta.toFixed(1)})</dd><dt>정상 제공</dt><dd>${card.facts.servedDelta > 0 ? "+" : ""}${card.facts.servedDelta}명</dd></dl><p id="coach-text-${card.id}">${card.explanation}</p><small>근거: 합성 시나리오·부가세 적립·2026 최저임금 / ${card.version}</small><button class="secondary-button" data-coach-mission="${index}" type="button">이 조건으로 10분 비교 미션</button></article>`).join("")}</div><p id="mission-result" aria-live="polite"></p></section>`;
+  if (campaign.coachSignature !== signature || !campaign.coach[campaign.month]) {
+    campaign.coach[campaign.month] = buildCoach(campaign.experimentBase, { monthNumber: campaign.month, businessTypeId: campaign.businessTypeId, loanAmount: campaign.loanAmount, bakeryGearBought: state.bakeryGearBought, losses, byType: report?.metrics.byType });
+    campaign.coachSignature = signature;
+  }
+  const cards = campaign.coach[campaign.month];
+  const cardMarkup = (card, index) => `<article class="coach-card"><h3>${card.title}</h3><p>${escapeHtml(card.observation ?? "다른 운영 조건도 비교해 볼 수 있습니다.")}${monthly ? " (대표 영업일을 월 단위로 환산한 합성 결과)" : ""}</p><p><b>${escapeHtml(card.from)} → ${escapeHtml(card.to)}</b></p><p id="coach-text-${card.id}">${escapeHtml(card.explanation)}</p><button class="secondary-button" data-coach-mission="${index}" type="button">내 예상부터 비교하기</button></article>`;
+  return `<section class="report-panel evidence-coach"><span class="meta-label" id="coach-mode">계산 근거 코치 · 생성 AI 미연결</span><h2>다음엔 한 가지만 바꿔보세요.</h2>${cardMarkup(cards[0], 0)}<details><summary>다른 비교 가설 2개</summary>${cards.slice(1).map((card, index) => cardMarkup(card, index + 1)).join("")}</details><p id="mission-result" aria-live="polite"></p></section>`;
 }
 
 function mountCoach() {
   const campaign = state.campaign;
   const cards = campaign.coach?.[campaign.month];
   if (!cards) return;
-  screen.querySelectorAll("[data-coach-mission]").forEach((button) => button.addEventListener("click", () => {
+  screen.querySelectorAll("[data-coach-mission]").forEach(button => button.addEventListener("click", () => {
     const card = cards[Number(button.dataset.coachMission)];
-    document.querySelector("#experiment-change").value = `${card.change.key}:${card.change.id}`;
-    document.querySelector("#mission-result").textContent = "10분 미션: 바꾸기 전 예상 → 같은 조건 비교 → 이익과 노동을 함께 읽기. 효과가 나쁘면 적용하지 않아도 됩니다.";
-    document.querySelector("#run-experiment").focus();
-    document.querySelector(".experiment-panel").scrollIntoView({ behavior: "smooth", block: "start" });
-    campaign.activeMission = card.id;
-    saveProgress();
+    const select = document.querySelector("#experiment-change");
+    select.value = `${card.change.key}:${card.change.id}`;
+    select.dispatchEvent(new Event("change"));
+    document.querySelector(".experiment-panel").open = true;
+    document.querySelector("#experiment-prediction").focus();
   }));
   const mode = document.querySelector("#coach-mode");
-  narrateCoach(cards, document.querySelector('meta[name="ois-coach-endpoint"]')?.content).then((result) => {
+  narrateCoach(cards, document.querySelector('meta[name="ois-coach-endpoint"]')?.content).then(result => {
     if (!mode?.isConnected) return;
     mode.textContent = result.mode;
     cards.forEach((card, index) => { document.querySelector(`#coach-text-${card.id}`).textContent = result.texts[index]; });
@@ -2405,34 +2429,107 @@ function mountCoach() {
 }
 
 function mountExperiment() {
-  document.querySelector("#run-experiment")?.addEventListener("click", () => {
-    const [key, id] = document.querySelector("#experiment-change").value.split(":");
+  const form = document.querySelector("#experiment-form");
+  if (!form) return;
+  const campaign = state.campaign;
+  const select = document.querySelector("#experiment-change");
+  const prediction = document.querySelector("#experiment-prediction");
+  const output = document.querySelector("#experiment-results");
+  const labels = { up: "늘어난다", down: "줄어든다", same: "같다" };
+  const renderResult = draft => {
+    const result = draft.result;
+    const direction = result.delta.profit > 0 ? "up" : result.delta.profit < 0 ? "down" : "same";
+    output.innerHTML = `<p>내 예상: ${labels[draft.prediction]} · 계산 결과: ${labels[direction]}.</p><p>${escapeHtml(result.policy)}</p><div class="notebook-table-wrap"><table class="comparison-table"><thead><tr><th>근거</th><th>기존</th><th>변경</th><th>차이</th></tr></thead><tbody>${[
+      ["월 영업이익", formatMoney(result.before.profit), formatMoney(result.after.profit), formatMoney(result.delta.profit)],
+      ["내 노동", `${(result.before.ownerMinutes / 60).toFixed(1)}시간`, `${(result.after.ownerMinutes / 60).toFixed(1)}시간`, `${(result.delta.ownerMinutes / 60).toFixed(1)}시간`],
+      ["정상 제공", result.before.served, result.after.served, result.delta.served],
+    ].map(row => `<tr>${row.map(value => `<td>${value}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    <label for="experiment-reflection">3. 이 결과의 영업이익 변화는?</label><select id="experiment-reflection"><option value="">표를 읽고 선택</option><option value="up">늘었다</option><option value="same">같았다</option><option value="down">줄었다</option></select>
+    <p class="experiment-guidance" role="status">이익뿐 아니라 내 노동도 확인하고 선택하세요. 효과가 나쁘면 유지해도 미션을 완료합니다.</p>
+    <div class="experiment-decisions">${campaign.month < 12 ? '<button class="secondary-button" data-decision="apply" disabled>다음 달에 적용</button>' : ""}<button class="secondary-button" data-decision="keep" disabled>현재 조건 유지</button></div>`;
+    const reflection = output.querySelector("#experiment-reflection");
+    reflection.value = draft.interpretation ?? "";
+    const update = () => {
+      draft.interpretation = reflection.value;
+      const valid = reflection.value === direction;
+      reflection.disabled = !!draft.choice;
+      output.querySelectorAll("[data-decision]").forEach(button => { button.disabled = !valid || !!draft.choice; });
+      output.querySelector(".experiment-guidance").textContent = draft.choice ? `미션 완료 · ${draft.choice === "apply" ? "다음 달 적용 예약" : "현재 조건 유지"}. 예상과 실제 계산, 해석과 선택을 저장했습니다.` : !reflection.value ? "이익뿐 아니라 내 노동도 확인하고 선택하세요." : valid ? "맞게 읽었습니다. 노동시간 변화까지 고려해 적용 여부를 결정하세요." : "이익 차이의 부호를 다시 확인하세요. 매출과 이익은 다릅니다.";
+      saveProgress();
+    };
+    reflection.onchange = update;
+    output.querySelectorAll("[data-decision]").forEach(button => button.onclick = () => {
+      if (reflection.value !== direction || draft.choice) return;
+      draft.choice = button.dataset.decision;
+      if (draft.choice === "apply") state.pendingExperiment = { ...result.change };
+      else state.pendingExperiment = null;
+      campaign.missions ??= [];
+      const id = `${campaign.month}:${result.change.key}:${result.change.id}`;
+      if (!campaign.missions.includes(id)) campaign.missions.push(id);
+      campaign.decisionMissions = [...(campaign.decisionMissions ?? []), { month: campaign.month, change: result.change, prediction: draft.prediction, actual: direction, interpretation: draft.interpretation, choice: draft.choice }].slice(-40);
+      update();
+    });
+    update();
+  };
+  const reset = () => {
+    campaign.decisionDraft = { month: campaign.month, condition: select.value, prediction: prediction.value };
+    output.innerHTML = "";
+    saveProgress();
+  };
+  select.onchange = () => { prediction.value = ""; reset(); };
+  prediction.onchange = reset;
+  form.onsubmit = event => {
+    event.preventDefault();
+    if (!labels[prediction.value]) return;
+    const [key, id] = select.value.split(":");
     try {
-      const result = compareCondition(state.campaign.experimentBase, { monthNumber: state.campaign.month, businessTypeId: state.campaign.businessTypeId, loanAmount: state.campaign.loanAmount }, { key, id });
-      state.campaign.experiments = [...(state.campaign.experiments ?? []), result].slice(-20);
-      state.campaign.comparedConditions ??= [];
-      const comparisonId = `${state.campaign.month}:${key}:${id}`;
-      if (!state.campaign.comparedConditions.includes(comparisonId)) state.campaign.comparedConditions.push(comparisonId);
-      const mission = state.campaign.coach?.[state.campaign.month]?.find((card) => card.id === state.campaign.activeMission);
-      if (mission?.change.key === key && mission.change.id === id) { state.campaign.missions ??= []; if (!state.campaign.missions.includes(mission.id)) state.campaign.missions.push(mission.id); }
-      const rows = [["월 영업이익", formatMoney(result.before.profit), formatMoney(result.after.profit), formatMoney(result.delta.profit)], ["사장 노동", `${(result.before.ownerMinutes / 60).toFixed(1)}시간`, `${(result.after.ownerMinutes / 60).toFixed(1)}시간`, `${(result.delta.ownerMinutes / 60).toFixed(1)}시간`], ["정상 제공", `${result.before.served}명`, `${result.after.served}명`, `${result.delta.served}명`]];
-      document.querySelector("#experiment-results").innerHTML = `<p>${escapeHtml(result.policy)} · 비교 조건 ${escapeHtml(result.from)} → ${escapeHtml(result.to)}</p><div class="notebook-table-wrap"><table class="comparison-table"><thead><tr><th>근거</th><th>기존 조건</th><th>변경 조건</th><th>차이</th></tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${value}</td>`).join("")}</tr>`).join("")}</tbody></table></div>${state.campaign.month < 12 ? `<button class="secondary-button" id="apply-experiment" type="button">다음 달에 이 조건 적용</button>` : ""}`;
-      document.querySelector("#apply-experiment")?.addEventListener("click", () => { state.pendingExperiment = { key, id }; saveProgress(); toast("다음 달 계획에 비교한 조건을 적용합니다."); });
-      platform.logEvent("experiment_completed", { month: state.campaign.month, key, id, profitDelta: result.delta.profit, ownerMinutesDelta: result.delta.ownerMinutes, version: DATA_VERSION });
+      const result = compareCondition(campaign.experimentBase, { monthNumber: campaign.month, businessTypeId: campaign.businessTypeId, loanAmount: campaign.loanAmount, bakeryGearBought: state.bakeryGearBought }, { key, id });
+      campaign.experiments = [...(campaign.experiments ?? []), result].slice(-20);
+      campaign.comparedConditions ??= [];
+      const comparisonId = `${campaign.month}:${key}:${id}`;
+      if (!campaign.comparedConditions.includes(comparisonId)) campaign.comparedConditions.push(comparisonId);
+      campaign.decisionDraft = { month: campaign.month, condition: select.value, prediction: prediction.value, result };
+      renderResult(campaign.decisionDraft);
+      platform.logEvent("experiment_compared", { month: campaign.month, key, id });
       saveProgress();
     } catch (error) { toast(error.message); }
-  });
+  };
+  const draft = campaign.decisionDraft;
+  if (draft?.month === campaign.month && [...select.options].some(option => option.value === draft.condition)) {
+    select.value = draft.condition;
+    prediction.value = draft.prediction ?? "";
+    if (draft.result) { document.querySelector(".experiment-panel").open = true; renderResult(draft); }
+  }
 }
 
 function applyPendingExperiment() {
   const change = state.pendingExperiment;
   if (!change) return;
-  const collections = { hourPlan: HOUR_PLANS, staffing: STAFFING_PLANS, ownerRole: OWNER_ROLES };
-  state.simulation[change.key] = getById(collections[change.key], change.id);
-  state[{ hourPlan: "hourPlanId", staffing: "staffingId", ownerRole: "ownerRoleId" }[change.key]] = change.id;
+  try {
+    applyCondition(state.simulation, change, { bakeryGearBought: state.bakeryGearBought });
+    if (change.key === "menu") state.menuIds = state.simulation.menus.map(menu => menu.id);
+    else state[{ hourPlan: "hourPlanId", staffing: "staffingId", ownerRole: "ownerRoleId" }[change.key]] = change.id;
+  } catch { toast("가게 조건이 달라져 예약한 비교 조건을 적용하지 못했습니다."); }
   state.pendingExperiment = null;
 }
 
+function compactReport() {
+  const root = screen.firstElementChild;
+  root.classList.add("compact-report");
+  const kpis = root.querySelector(".report-kpis");
+  if (kpis && state.view !== "final") {
+    const more = document.createElement("details");
+    more.className = "report-panel secondary-kpis";
+    more.innerHTML = "<summary>매출·비용 등 나머지 지표 보기</summary><div class='report-kpis'></div>";
+    [...kpis.children].forEach(item => {
+      const label = item.querySelector(".metric-label")?.textContent ?? "";
+      if (!/영업이익|월 순이익|사장 노동|보유 현금/.test(label)) more.lastElementChild.append(item);
+    });
+    if (more.lastElementChild.children.length) kpis.after(more);
+  }
+  const coach = root.querySelector(".evidence-coach");
+  if (coach && kpis) kpis.after(coach);
+}
 function deltaChip(current, before, inverse = false) {
   const change = current - before;
   const neutral = Math.abs(change) < 0.005;
@@ -2529,7 +2626,7 @@ function renderImprovements() {
             }).join("")}
           </div>
 
-          <div class="setup-section-head" style="margin-top:22px"><h2>메뉴 개편</h2><span class="meta-label">${sim.menus.length} / 5 · 다음 달부터 적용 · ◎/△ = 장사 노트 기록</span></div>
+          <div class="setup-section-head" style="margin-top:22px"><h2>메뉴 개편</h2><span class="meta-label">${sim.menus.length} / 5 · 이번 달부터 적용 · ◎/△ = 장사 노트 기록</span></div>
           ${menuNotice ? `<p class="staffing-none">${menuNotice}</p>` : ""}
           <div class="menu-edit-grid">
             ${MENUS.map((menu) => {
@@ -2625,7 +2722,7 @@ function renderImprovements() {
     if (selected) {
       if (sim.menus.length <= 2) { toast("메뉴가 두 개는 있어야 장사가 됩니다."); sounds.bad(); return; }
       sim.setMenus(sim.menus.filter((item) => item.id !== menu.id));
-      toast(`${menu.name}을(를) 메뉴에서 뺐습니다. 다음 달부터 적용됩니다.`);
+      toast(`${menu.name}을(를) 메뉴에서 뺐습니다. 이번 달부터 적용됩니다.`);
     } else {
       const gate = menuGate(menu);
       if (gate) { toast(gate); sounds.bad(); return; }
@@ -3011,15 +3108,6 @@ window.addEventListener("keydown", (event) => {
   const station = OWNER_STATIONS.find((item) => item.key === event.key);
   if (station && !state.simulation.activeDilemma && !state.arcadeOpen) {
     event.preventDefault();
-    // 튜토리얼 연습 스텝 — 키로도 연습판이 열린다
-    const tutStep = state.tutorial?.step;
-    if (tutStep?.practice) {
-      if (tutStep.practice === station.id) {
-        state.tutorial.enterWaiting();
-        launchArcade(station.id, { practice: true });
-      }
-      return;
-    }
     const result = state.simulation.moveOwner(station.id);
     if (result.ok) { state.pendingArcade = null; sounds.good(); } else toast(result.reason);
     return;

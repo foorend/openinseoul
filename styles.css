@@ -3083,3 +3083,125 @@ button:disabled { cursor: not-allowed; }
 .consent-label input { width: 24px; min-height: 24px; flex-shrink: 0; }
 #class-link { overflow-wrap: anywhere; }
 #teacher-stats strong { font-size: 21px; }
+
+/* 핵심 조작은 장면 밖에 고정하고 상세 정보는 필요할 때 펼친다. */
+.operations-screen.enter-up, .compact-report.enter-up { animation: none; transform: none; }
+body[data-view="operations"] .mobile-hint, body[data-view="report"] .mobile-hint,
+body[data-view="monthClose"] .mobile-hint, body[data-view="final"] .mobile-hint { display: none; }
+.operations-screen .chapter-strip { padding: 10px 18px; margin: 0; }
+.operations-screen .decision-board { padding: 12px 18px; gap: 8px 20px; }
+.operations-screen .decision-board h2 { font-size: 21px; }
+.operations-screen .decision-board p { margin: 4px 0; font-size: 14px; }
+.operations-screen .decision-kpis { padding-top: 8px; gap: 20px; }
+.operations-screen .decision-kpis strong { font-size: 18px; }
+.operation-controls { position: sticky; top: 62px; z-index: 35; padding: 8px 16px; background: var(--ground); border-block: 1px solid var(--line); }
+.operation-controls .hud-bottom { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; padding: 0; }
+.operation-controls .station-dock { flex: 1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.operation-controls button { min-height: 44px; }
+.operation-controls .station-key, .operation-controls .work-key { display: none; }
+.operation-controls .station-name { font-size: 14px; white-space: normal; }
+.operation-controls .work-toggle { min-width: 0; }
+.operations-screen .ops-grid.management-mode { min-height: 0; grid-template-columns: minmax(0, 1fr) 280px; }
+.operations-screen .ops-grid.management-mode .scene-panel { height: max(360px, calc(100svh - 295px)); }
+.operations-screen .ops-rail { max-height: calc(100svh - 295px); overflow-y: auto; align-content: start; grid-template-rows: none; grid-auto-rows: max-content; }
+.operations-screen .rail-card { padding: 14px; }
+.operations-screen .management-tools { gap: 8px; }
+.operations-screen .management-tools button { padding: 8px; font-size: 14px; min-height: 44px; }
+.operation-tabs { display: none; }
+.operations-screen .dilemma-overlay { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border: 0; z-index: 80; padding: 12px; color: var(--steam); }
+.operations-screen .dilemma-card { max-height: calc(100svh - 100px); overflow-y: auto; }
+.operations-screen .dilemma-option { min-height: 44px; }
+.compact-report { gap: 16px; padding-bottom: 120px; }
+.compact-report .report-title { font-size: clamp(26px, 3vw, 40px); }
+.compact-report .report-title br, .compact-report .report-title em { display: none; }
+body[data-view="final"] .compact-report .report-title br { display: block; }
+body[data-view="final"] .compact-report .report-title em { display: inline; }
+.compact-report .report-kpis { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.compact-report .report-kpi { padding: 15px; min-width: 0; }
+.compact-report .report-kpi strong { font-size: clamp(22px, 2.5vw, 32px); overflow-wrap: anywhere; }
+.compact-report .report-actions { position: fixed; bottom: 0; left: 0; right: 0; margin: 0; padding: 12px max(18px, calc((100vw - 1280px) / 2)); background: var(--ground); border-top: 1px solid var(--line); z-index: 35; gap: 10px; }
+.compact-report .report-actions button { white-space: normal; min-height: 48px; }
+body[data-view="report"] .toast-region, body[data-view="monthClose"] .toast-region, body[data-view="final"] .toast-region { bottom: 125px; }
+.compact-report .report-panel { padding: 18px; }
+.compact-report .evidence-coach h2 { font-size: 23px; margin: 8px 0; }
+.compact-report .coach-card { padding: 12px 0; background: none; border: 0; }
+.compact-report .coach-card h3 { margin: 0 0 6px; font-size: 18px; }
+.compact-report .coach-card p { margin: 6px 0; line-height: 1.5; font-size: 15px; }
+.compact-report .coach-card button { width: auto; margin-top: 8px; }
+.compact-report summary { min-height: 44px; align-content: center; cursor: pointer; }
+.experiment-controls { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.experiment-panel select { width: 100%; min-width: 0; min-height: 48px; font-size: 16px; padding: 10px; color: var(--steam); background: var(--ground); border: 1px solid var(--line); }
+.experiment-decisions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.experiment-guidance { margin-block: 14px; }
+.opening-practice { width: min(720px, calc(100vw - 24px)); max-height: calc(100svh - 24px); overflow: auto; padding: 20px; color: var(--steam); background: var(--ground); border: 1px solid var(--line); }
+.opening-practice::backdrop { background: #000b; }
+.opening-practice header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.opening-practice button { min-height: 44px; }
+.opening-practice h2 { margin: 12px 0; font-size: 25px; }
+.opening-practice p { line-height: 1.5; font-size: 15px; }
+.practice-scene { position: relative; height: clamp(160px, 30svh, 300px); margin: 14px 0; }
+.practice-scene canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.practice-metrics { font-size: 14px; line-height: 1.6; }
+.practice-actions { display: grid; gap: 10px; margin-top: 14px; }
+.practice-actions button { min-height: 48px; white-space: normal; }
+@media (min-width: 941px) {
+  .operations-screen { display: flex; flex-direction: column; height: calc(100svh - 62px); min-height: 650px; }
+  .operations-screen > .chapter-strip, .operations-screen > .decision-board, .operation-controls { flex-shrink: 0; }
+  .operations-screen .ops-grid.management-mode { flex: 1; min-height: 260px; }
+  .operations-screen .ops-grid.management-mode .scene-panel { height: 100%; min-height: 260px; }
+  .operations-screen .ops-rail { max-height: 100%; min-height: 0; }
+}
+@media (max-width: 940px) {
+  .operations-screen { display: flex; flex-direction: column; height: calc(100svh - 62px); min-height: 680px; padding: 6px 10px 178px; }
+  .operations-screen .chapter-strip { padding: 6px 12px; display: block; font-size: 12px; }
+  .operations-screen .chapter-strip > :last-child { display: none; }
+  .operations-screen .decision-board { padding: 8px 12px; margin: 6px 0; gap: 6px; grid-template-columns: 1fr; flex-shrink: 0; }
+  .operations-screen .decision-board .meta-label { display: none; }
+  .operations-screen .decision-board h2 { font-size: 18px; margin: 0; }
+  .operations-screen #bottleneck-action { min-height: 44px; padding: 8px 12px; }
+  .operations-screen .decision-board p { font-size: 13px; }
+  .operations-screen .decision-kpis { gap: 12px; padding-top: 6px; }
+  .operations-screen .decision-kpis b { font-size: 16px; margin-left: 4px; }
+  .operations-screen .decision-kpis span { font-size: 11px; }
+  .operation-tabs { display: flex; flex-shrink: 0; gap: 8px; padding: 6px 0; }
+  .operation-tabs button { min-height: 44px; padding: 8px 16px; }
+  .operation-tabs button[aria-pressed="true"] { border-color: var(--steam); }
+  .operation-controls { position: fixed; top: auto; bottom: 0; left: 0; right: 0; padding: 8px 10px max(8px, env(safe-area-inset-bottom)); }
+  .operation-controls .hud-bottom { flex-direction: column; gap: 6px; align-items: stretch; }
+  .operation-controls .control-dock { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; padding: 1px; }
+  .operation-controls .station-dock { grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: 4px; padding: 1px; }
+  .operation-controls .station-dock button { padding: 5px; height: 46px; border-radius: 4px; }
+  .operation-controls .station-name { font-size: 13px; }
+  .operation-controls .station-icon { display: none; }
+  .operations-screen .ops-grid, .operations-screen .ops-grid.management-mode { grid-template-columns: 1fr; padding: 0; gap: 8px; flex: 1; min-height: 180px; }
+  .operations-screen .ops-grid .scene-panel, .operations-screen .ops-grid.management-mode .scene-panel { height: 100%; min-height: 180px; }
+  .operations-screen .ops-rail { display: none; max-height: none; overflow: visible; }
+  .operations-screen[data-panel="management"] { height: auto; }
+  .operations-screen[data-panel="management"] .ops-rail { display: grid; }
+  .operations-screen[data-panel="management"] .scene-panel { display: none; }
+  .operations-screen .hud-top { padding: 8px; }
+  .operations-screen .day-clock { padding: 6px 10px; }
+  .operations-screen .day-clock strong { font-size: 22px; }
+  body[data-view="operations"] .toast-region { bottom: 185px; }
+  .operations-screen .phase-label { font-size: 10px; }
+  .operations-screen .scene-hud { padding: 4px; }
+  .operations-screen .hud-top { padding: 0; }
+  .compact-report { padding: 18px 12px 145px; }
+  .compact-report .report-header { gap: 10px; }
+  .compact-report .report-verdict { padding: 10px; }
+  .compact-report .report-verdict p { margin-top: 6px; font-size: 14px; }
+  .compact-report .report-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .compact-report .report-kpi { padding: 12px; }
+  .compact-report .report-kpi strong { font-size: 21px; }
+  .compact-report .report-actions { flex-wrap: wrap; padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
+  .compact-report .report-actions > * { flex: 1 1 auto; font-size: 14px; }
+  .compact-report .report-panel { padding: 14px; }
+  .opening-practice { padding: 14px; }
+  .opening-practice h2 { font-size: 21px; }
+}
+@media (max-width: 480px) {
+  .compact-report .report-kpis { grid-template-columns: 1fr; }
+  .compact-report .report-kpi { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+  .compact-report .report-kpi strong { overflow-wrap: normal; white-space: nowrap; }
+  .compact-report .report-kpi > small { grid-column: 1 / -1; }
+}

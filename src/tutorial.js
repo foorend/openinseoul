@@ -1,288 +1,89 @@
-// 첫 영업일 온보딩 — 설명서 대신 직접 한 번씩 눌러보게 한다.
-// 각 단계는 실제 UI 요소를 비추고, 그 요소를 클릭해야 다음으로 넘어간다.
-//
-// 자리 이름은 매장 규모에 따라 달라진다(베이커리는 "키친", 작은 카페는 "바").
-// 그래서 문구에는 {bar}·{hall}·{door} 토큰만 쓰고, 화면에 띄울 때
-// 실제 버튼에 적힌 이름으로 치환한다. 안내와 버튼이 다른 말을 하면 안 된다.
+import { DISTRICTS, FORMATS, MENUS } from "./data.js?release=20261006c";
+import { RestaurantSimulation, formatMoney } from "./sim.js?release=20261006c";
 
-const STEPS = [
-  {
-    id: "mode",
-    target: "#arcade-column",
-    title: "먼저 정하세요 — 직접 뛸까, 결과만 볼까",
-    body: "이 게임은 두 가지로 즐길 수 있습니다. ① 직접 뛰기: 왼쪽의 {bar}·{hall}·{door} 카드로 미니게임을 열어 오늘의 수익률을 직접 끌어올립니다 — 물론 못하면 나빠질 수도 있어요. ② 자동(🤖): 내가 고른 상권·평수·집기·메뉴의 결과가 궁금할 때 — 누르는 순간 4배속으로 하루가 자동 진행되고, 마감 리포트로 바로 갑니다. 지금은 직접 뛰는 법부터 배워봅시다.",
-    action: "직접 뛰어보겠습니다",
-    passive: true,
-  },
-  {
-    id: "work",
-    target: "#work-toggle",
-    title: "먼저 출근부터",
-    body: "스페이스 바 하나로 출근과 쉬기를 오갑니다. 출근하면 근무 게이지가 줄고, 쉬면 멈춥니다.",
-    action: "출근을 눌러보세요",
-    await: { selector: "#work-toggle", event: "click" },
-  },
-  {
-    id: "overtime",
-    target: "#work-toggle",
-    title: "초과 근무 — 시간이 끝나도 남을 수 있습니다",
-    body: "근무 게이지가 0이 되어도 스페이스를 다시 누르면 초과 근무로 계속 일할 수 있어요. 대신 빨간 스트레스 게이지가 차오르고, 스트레스가 쌓이면 손이 느려집니다. 그리고 초과로 일한 시간까지 전부 연말정산에서 사장 시급으로 청구됩니다 — 공짜 노동은 없습니다.",
-    action: "알겠습니다",
-    passive: true,
-  },
-  {
-    id: "bar",
-    target: '.arcade-home-card[data-station="bar"]',
-    title: "{bar} — 만드는 자리 (직접 해봅시다)",
-    body: "미니게임은 왼쪽 카드를 클릭하거나 키보드 1을 눌러야만 시작됩니다. 지금 왼쪽 {bar} 카드를 눌러 짧은 연습을 해보세요: ←→로 머신·스티머·오븐을 오가고, 주문에 찍힌 키를 꾹 눌러 추출·굽기 — 게이지가 노란 구간에 왔을 때 떼면 완성입니다. 일찍 떼면 설익고, 끝까지 누르면 탑니다.",
-    action: "왼쪽 {bar} 카드를 눌러 연습 시작",
-    await: { selector: '.arcade-home-card[data-station="bar"]', event: "click" },
-    practice: "bar",
-  },
-  {
-    id: "hall",
-    target: '.arcade-home-card[data-station="hall"]',
-    title: "{hall} — 치우는 자리 (직접 해봅시다)",
-    body: "이번엔 왼쪽 {hall} 카드입니다 — 클릭하거나 키보드 2. ←→로 테이블을 오가고, 말풍선에 찍힌 키를 먼저 누른 뒤(주문서 Q · 서빙 W · 응대 E · 정리 R) 스페이스를 두 번 연타하면 처리됩니다. 손님 많은 시간대엔 말풍선이 쏟아집니다.",
-    action: "왼쪽 {hall} 카드를 눌러 연습 시작",
-    await: { selector: '.arcade-home-card[data-station="hall"]', event: "click" },
-    practice: "hall",
-  },
-  {
-    id: "door",
-    target: '.arcade-home-card[data-station="door"]',
-    title: "{door} — 불러오는 자리 (직접 해봅시다)",
-    body: "마지막으로 왼쪽 {door} 카드 — 클릭하거나 키보드 3. 방향키(↑↓←→)로 거리를 뛰어다니는 전단지 돌리기입니다. 행인은 잡으면 매출, 진상은 잡으면 돈 안 내고 짜증만, 리뷰어는 복불복. 피크 시간대나 성수기 달엔 사람이 훨씬 많이 쏟아집니다 — 화면 위 표시를 보세요.",
-    action: "왼쪽 {door} 카드를 눌러 연습 시작",
-    await: { selector: '.arcade-home-card[data-station="door"]', event: "click" },
-    practice: "door",
-  },
-  {
-    id: "auto",
-    target: "#station-auto",
-    title: "결과만 빨리 보고 싶다면 — 자동",
-    body: "자동은 '귀찮아서'가 아니라 '내 선택의 성적표가 궁금할 때' 쓰는 버튼입니다. 켜는 순간 사장이 알아서 움직이고 4배속으로 하루가 흘러, 미니게임 없이 마감 리포트로 직행합니다. 그것도 길면 옆의 스킵(⏭) — 남은 하루를 즉시 계산해 리포트를 바로 보여줍니다. 자리를 직접 찍으면 다시 수동이 됩니다.",
-    action: "확인했습니다",
-    passive: true,
-  },
-  {
-    id: "speed",
-    target: ".control-dock",
-    title: "속도는 직접 잡으세요",
-    body: "지켜보고 싶으면 1×, 넘기고 싶으면 4×. 돌발 상황이 오면 어떤 속도든 자동으로 멈춥니다. 하루가 끝나면 마감 리포트와 함께 '장사 노트'가 열립니다 — 손님이 가르쳐 준 것들이 다음 판의 무기가 됩니다.",
-    action: "속도 버튼을 눌러보세요",
-    await: { selector: "[data-speed]", event: "click" },
-  },
-];
-
-const STORAGE_KEY = "ois-cafe/tutorial-done-v5";
-
-export function tutorialCompleted() {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function markCompleted() {
-  try {
-    localStorage.setItem(STORAGE_KEY, "1");
-  } catch {
-    /* 저장 못 해도 이번 판은 정상 진행된다 */
-  }
+// 설명용 고정 상황도 실제 엔진으로 계산한다. 캠페인·교육 점수에는 합산하지 않는다.
+export function createOpeningPractice() {
+  const sim = new RestaurantSimulation({ seed: "OPENING-PRACTICE-1", district: DISTRICTS[2], format: FORMATS[0], menus: MENUS.slice(0, 2), cash: 5000, reputation: 68, awareness: 60, hygiene: 86 });
+  sim.startDay(1);
+  sim.arrivals = [];
+  sim.activeAgents = [];
+  sim.tables.forEach(table => { table.state = "dirty"; table.cleanAt = 0; table.dirtyAt = sim.gameMinute; });
+  sim.toggleOwnerWork(true);
+  sim.setOwnerAuto(false);
+  sim.setSpeed(0);
+  return sim;
 }
 
 export class Tutorial {
-  constructor({ onFinish, onStep, stationNames } = {}) {
-    this.onFinish = onFinish ?? (() => {});
-    this.onStep = onStep ?? (() => {});
-    this.names = { bar: "바", hall: "홀", door: "입구", ...(stationNames ?? {}) };
-    this.index = 0;
-    this.root = null;
-    this.cleanupAwait = null;
-    this.reposition = this.reposition.bind(this);
-  }
+  constructor({ onFinish, Scene } = {}) { this.Scene = Scene; this.onFinish = onFinish ?? (() => {}); this.sim = createOpeningPractice(); this.phase = "choose"; }
 
   start() {
-    this.root = document.createElement("div");
-    this.root.className = "tutorial-layer";
-    this.root.innerHTML = `
-      <div class="tutorial-mask" id="tut-mask"></div>
-      <div class="tutorial-ring" id="tut-ring" hidden></div>
-      <div class="tutorial-card" id="tut-card" role="dialog" aria-live="polite">
-        <div class="tutorial-head">
-          <span class="tutorial-step" id="tut-step"></span>
-          <button class="tutorial-skip" id="tut-skip" type="button">튜토리얼 건너뛰기</button>
-        </div>
-        <h3 id="tut-title"></h3>
-        <p id="tut-body"></p>
-        <div class="tutorial-foot">
-          <div class="tutorial-dots" id="tut-dots"></div>
-          <button class="tutorial-next" id="tut-next" type="button"></button>
-        </div>
-      </div>`;
+    this.root = document.createElement("dialog");
+    this.root.className = "opening-practice";
+    this.root.innerHTML = `<header><span>첫 90초 · 한 번 해보기</span><button class="text-button" data-skip>건너뛰기</button></header>
+      <h2>손님이 오는데, 앉을 자리가 없어요.</h2>
+      <p class="practice-scope">1인 카페 연습 상황 · 실제 계산 규칙 사용 · 내 가게 장부에는 반영되지 않습니다.</p>
+      <div class="practice-scene"><canvas aria-label="홀 정리 전후와 손님을 보여주는 연습 매장"></canvas></div>
+      <div class="practice-metrics" aria-live="polite"></div>
+      <p class="practice-feedback" role="status">테이블이 모두 정리를 기다립니다. 사장을 어디로 보낼까요?</p>
+      <div class="practice-actions"><button class="primary-button" data-clean>홀로 가서 자리 만들기</button><button class="secondary-button" data-wrong>바에서 제조하기</button></div><button class="text-button" data-pause hidden>연습 일시정지</button><button class="text-button" data-observe hidden>손님 제공까지 빠르게 보기</button>`;
     document.body.append(this.root);
-    this.root.querySelector("#tut-skip").addEventListener("click", () => this.finish(true));
-    this.root.querySelector("#tut-next").addEventListener("click", () => this.advance());
-    window.addEventListener("resize", this.reposition);
-    window.addEventListener("scroll", this.reposition, true);
-    // 화면(캔버스·줌·레이아웃)이 자리 잡는 걸 지켜보다 링을 다시 맞춘다 — "박스가 떠 있는" 문제 해결
-    this.ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => this.reposition()) : null;
-    this.ro?.observe(document.body);
-    const screenEl = document.querySelector("#screen");
-    if (screenEl) this.ro?.observe(screenEl);
-    this.render();
-  }
-
-  // 렌더 직후 레이아웃이 안정될 때까지 여러 번 다시 맞춘다
-  scheduleReposition() {
-    requestAnimationFrame(() => this.reposition());
-    for (const ms of [120, 320, 600]) setTimeout(() => this.reposition(), ms);
-  }
-
-  get step() {
-    return STEPS[this.index];
-  }
-
-  // {bar} 같은 토큰을 실제 버튼 이름으로 바꾸고, 조사도 받침에 맞춰 고른다.
-  fill(text) {
-    return text
-      .replace(/\{(bar|hall|door)\}/g, (_, key) => this.names[key])
-      .replace(/(.)(을\(를\)|이\(가\)|은\(는\))/g, (match, char, particle) => {
-        const code = char.charCodeAt(0);
-        const hasBatchim = code >= 0xac00 && code <= 0xd7a3 && (code - 0xac00) % 28 !== 0;
-        const pair = { "을(를)": ["를", "을"], "이(가)": ["가", "이"], "은(는)": ["는", "은"] }[particle];
-        return char + pair[hasBatchim ? 1 : 0];
-      });
-  }
-
-  render() {
-    const step = this.step;
-    if (!step) return this.finish(false);
-    this.onStep(step);
-
-    this.root.querySelector("#tut-step").textContent = `${this.index + 1} / ${STEPS.length}`;
-    this.root.querySelector("#tut-title").textContent = this.fill(step.title);
-    this.root.querySelector("#tut-body").textContent = this.fill(step.body);
-    this.root.querySelector("#tut-dots").innerHTML = STEPS
-      .map((_, i) => `<i class="${i === this.index ? "is-current" : i < this.index ? "is-done" : ""}"></i>`).join("");
-
-    const next = this.root.querySelector("#tut-next");
-    next.textContent = this.fill(step.action);
-    // 클릭을 기다리는 단계에서는 버튼이 안내문 역할만 한다.
-    next.classList.toggle("is-hint", !step.passive);
-    next.disabled = !step.passive;
-
-    // 이번 스텝의 대상 요소가 커지거나 줄어들면 즉시 링을 다시 맞춘다
-    if (this.observedTarget) { this.ro?.unobserve(this.observedTarget); this.observedTarget = null; }
-    const targetEl = step.target ? document.querySelector(step.target) : null;
-    if (targetEl && this.ro) { this.ro.observe(targetEl); this.observedTarget = targetEl; }
-
-    this.bindAwait(step);
-    this.reposition();
-    this.scheduleReposition();
-  }
-
-  bindAwait(step) {
-    this.cleanupAwait?.();
-    this.cleanupAwait = null;
-    if (step.passive || !step.await) return;
-
-    const target = document.querySelector(step.await.selector);
-    // 대상이 없거나 눌리지 않는 상태면 튜토리얼이 막힌다.
-    // 그런 단계는 안내만 하고 넘어갈 수 있게 버튼을 살려 둔다.
-    const blocked = !target || target.disabled;
-    const next = this.root.querySelector("#tut-next");
-    if (blocked) {
-      next.disabled = false;
-      next.classList.remove("is-hint");
-      next.textContent = "다음";
-    }
-
-    const handler = (event) => {
-      if (!event.target.closest(step.await.selector)) return;
-      // 연습 스텝 — 클릭하면 미니게임 연습이 열린다. 카드는 비켜 주고,
-      // 연습이 끝나는 순간 main이 advance()를 불러 다음 스텝으로 넘어간다.
-      if (step.practice) {
-        this.enterWaiting();
-        return;
+    this.root.showModal();
+    this.scene = new this.Scene(this.root.querySelector("canvas"), { district: this.sim.district, format: this.sim.format, menus: this.sim.menus, restaurantName: "첫손님 연습카페" });
+    this.root.querySelector("[data-skip]").onclick = () => this.finish(true);
+    this.root.addEventListener("cancel", event => { event.preventDefault(); this.finish(true); });
+    this.root.querySelector("[data-wrong]").onclick = () => { this.root.querySelector(".practice-feedback").textContent = "커피를 만들어도 놓을 자리가 없습니다. 먼저 홀에서 자리를 확보해 보세요."; };
+    this.root.querySelector("[data-clean]").onclick = () => {
+      this.phase = "cleaning";
+      this.sim.moveOwner("hall");
+      this.sim.setSpeed(1);
+      this.root.querySelector("[data-pause]").hidden = false;
+      this.root.querySelector("[data-observe]").hidden = false;
+      this.root.querySelectorAll(".practice-actions button").forEach(button => { button.disabled = true; });
+      this.root.querySelector(".practice-feedback").textContent = "사장이 이동해 테이블을 정리합니다. 이동·정리 시간도 노동으로 셉니다.";
+    };
+    this.root.querySelector("[data-pause]").onclick = event => {
+      this.sim.setSpeed(this.sim.speed ? 0 : 1);
+      event.currentTarget.textContent = this.sim.speed ? "연습 일시정지" : "연습 계속";
+    };
+    const tick = delta => {
+      const snap = this.sim.update(delta);
+      if (this.phase === "cleaning" && snap.tables.some(table => table.state === "free")) {
+        this.phase = "serving";
+        this.sim.spawnAgent({ id: "practice-guest", day: 1, hour: this.sim.openHour, spawnMinute: this.sim.gameMinute, customerId: "local_resident", guaranteed: true, randomKey: 1 });
+        this.sim.activeAgents.at(-1).channel = "dine";
+        this.root.querySelector(".practice-feedback").textContent = "자리가 생겼습니다. 연습 손님 한 명이 입장하고 주문하는 모습을 보세요.";
       }
-      setTimeout(() => this.advance(), 260);
+      this.scene.draw(snap, delta);
+      this.root.querySelector(".practice-metrics").textContent = `빈 테이블 ${snap.tables.filter(table => table.state === "free").length}개 · 제공 ${snap.metrics.served}명 · 매출 ${formatMoney(snap.metrics.revenue, true)} · 내 노동 ${snap.ownerMinutesToday.toFixed(1)}분`;
+      if (this.phase === "serving" && snap.metrics.served > 0) {
+        this.phase = "reflect"; this.sim.setSpeed(0);
+        this.root.querySelector("[data-pause]").hidden = true;
+        this.root.querySelector("[data-observe]").hidden = true;
+        this.root.querySelector("h2").textContent = "첫 손님에게 커피가 나갔어요.";
+        this.root.querySelector(".practice-feedback").textContent = "직접 정리해 좌석을 확보했고, 손님에게 메뉴를 제공했습니다. 매출과 함께 내 노동시간도 늘었습니다. 무엇을 배웠나요?";
+        this.root.querySelector(".practice-actions").innerHTML = '<button class="primary-button" data-understood>자리도 내 시간도 함께 관리해야 한다</button><button class="secondary-button" data-misread>방금 매출은 전부 내 순이익이다</button>';
+        this.root.querySelector("[data-understood]").onclick = () => this.finish(false);
+        this.root.querySelector("[data-misread]").onclick = () => { this.root.querySelector(".practice-feedback").textContent = "매출에서 재료·급여·월세 등 비용이 나갑니다. 방금 쓴 내 시간까지 마감에서 함께 확인해 보세요."; };
+      }
     };
-    document.addEventListener(step.await.event, handler, true);
-
-    // 8초가 지나도 못 눌렀다면 스스로 길을 열어준다.
-    const rescue = setTimeout(() => {
-      const button = this.root?.querySelector("#tut-next");
-      if (!button) return;
-      button.disabled = false;
-      button.classList.remove("is-hint");
-      button.textContent = "다음으로 넘어가기";
-    }, 8000);
-
-    this.cleanupAwait = () => {
-      document.removeEventListener(step.await.event, handler, true);
-      clearTimeout(rescue);
+    this.root.querySelector("[data-observe]").onclick = () => {
+      this.sim.setSpeed(1);
+      for (let i = 0; i < 900 && this.phase !== "reflect"; i++) tick(.1);
     };
-  }
-
-  reposition() {
-    if (!this.root) return;
-    const step = this.step;
-    const ring = this.root.querySelector("#tut-ring");
-    const card = this.root.querySelector("#tut-card");
-    const target = step?.target ? document.querySelector(step.target) : null;
-    if (!target) {
-      ring.hidden = true;
-      card.style.left = "50%";
-      card.style.top = "auto";
-      card.style.bottom = "40px";
-      card.style.transform = "translateX(-50%)";
-      return;
-    }
-    const rect = target.getBoundingClientRect();
-    const pad = 8;
-    ring.hidden = false;
-    ring.style.left = `${rect.left - pad}px`;
-    ring.style.top = `${rect.top - pad}px`;
-    ring.style.width = `${rect.width + pad * 2}px`;
-    ring.style.height = `${rect.height + pad * 2}px`;
-
-    // 카드는 대상 아래에 두되, 화면을 벗어나면 위로 붙인다.
-    const cardRect = card.getBoundingClientRect();
-    const below = rect.bottom + 16;
-    const fitsBelow = below + cardRect.height < window.innerHeight - 12;
-    card.style.bottom = "auto";
-    card.style.transform = "none";
-    card.style.top = `${fitsBelow ? below : Math.max(12, rect.top - cardRect.height - 16)}px`;
-    card.style.left = `${Math.min(Math.max(12, rect.left), window.innerWidth - cardRect.width - 12)}px`;
-  }
-
-  // 연습 미니게임이 도는 동안 카드·마스크를 치워 화면을 비워준다
-  enterWaiting() {
-    this.root?.classList.add("is-waiting");
-  }
-
-  advance() {
-    this.root?.classList.remove("is-waiting");
-    this.index += 1;
-    if (this.index >= STEPS.length) {
-      this.finish(false);
-      return;
-    }
-    this.render();
+    let last = 0;
+    const frame = time => {
+      if (!this.root) return;
+      tick(last ? Math.min(.15, (time - last) / 1000) : .016);
+      last = time;
+      this.raf = requestAnimationFrame(frame);
+    };
+    this.raf = requestAnimationFrame(frame);
   }
 
   finish(skipped) {
-    this.cleanupAwait?.();
-    window.removeEventListener("resize", this.reposition);
-    window.removeEventListener("scroll", this.reposition, true);
-    this.ro?.disconnect();
-    this.ro = null;
-    this.root?.remove();
-    this.root = null;
-    markCompleted();
-    this.onFinish({ skipped });
+    cancelAnimationFrame(this.raf);
+    this.root?.close(); this.root?.remove(); this.root = null;
+    this.onFinish({ skipped, served: this.sim.metrics.served, ownerMinutes: this.sim.ownerInterventionMinutes });
   }
 }

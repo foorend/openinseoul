@@ -1,5 +1,5 @@
-import { DATA_VERSION, DISTRICTS, FORMATS } from "./data.js?release=20261006";
-import { SOURCES } from "./sources.js?release=20261006";
+import { DATA_VERSION, DISTRICTS, FORMATS } from "./data.js?release=20261006c";
+import { SOURCES } from "./sources.js?release=20261006c";
 
 export const QUESTIONS = [
   { text: "게임의 보증금·집기 취득은 월 비용과 어떻게 다를까요?", options: ["현금은 줄지만 전액을 월 영업비용으로 다시 빼지 않는다", "현금과 영업이익을 매달 같은 금액만큼 뺀다", "둘 다 아무 영향이 없다"], answer: 0 },
