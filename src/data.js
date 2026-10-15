@@ -1,6 +1,9 @@
-// OPEN IN SEOUL — Cafe. 모든 수치는 실제 창업 상담 모델을 게임 밸런스로
-// 정규화한 합성 데이터다. 특정 서비스의 실제 데이터가 아니다. 금액 단위는 만원.
-export const DATA_VERSION = "seoul-cafe-2026.10-v3";
+// OPEN IN SEOUL — Cafe. 금액 단위는 만원.
+// 상권의 임대료·경쟁·수요 수준은 서울시 상권분석서비스 공개 데이터(public-data.js)에서 온다.
+// 손님 행동·시간대 분포·권리금·인테리어·메뉴 등은 실제 창업 상담 모델을 게임으로 옮긴 가정이다.
+import { PUBLIC_DISTRICTS, PUBLIC_META, SEOUL_AVERAGE } from "./public-data.js?release=20261015";
+export { PUBLIC_META, SEOUL_AVERAGE };
+export const DATA_VERSION = "seoul-cafe-2026.10-v4-public2026q2";
 
 // ── 사장 캐릭터 ──────────────────────────────────────────────
 // 게임 시작 전에 "누가 이 가게를 하는가"부터 정한다.
@@ -346,7 +349,8 @@ export const DILEMMAS = [
   },
 ];
 
-// 서울 5개 상권 — 임대·매출·시급 시세를 게임 밸런스로 정규화한 합성 데이터.
+// 서울 5개 상권 — 아래 lease·competition·demand는 파일 끝에서 공공데이터로 덮어쓴다.
+// traffic(시간대 분포)·mix(손님 구성)·weekday/weekend·research 메모는 게임 가정이다.
 export const DISTRICTS = [
   {
     id: "gangnam",
@@ -367,8 +371,8 @@ export const DISTRICTS = [
     number: "01",
     name: "강남 테헤란로",
     shortName: "강남",
-    tagline: "유동은 최강, 임대료도 최강",
-    description: "오피스 밀집의 왕. 아침·점심 후 테이크아웃 커피가 폭발하지만 대형 프랜차이즈와 임대료가 목을 조른다. 주말이면 거리가 비워진다.",
+    tagline: "유동도 경쟁도 최강",
+    description: "오피스 밀집의 왕. 아침·점심 후 테이크아웃 커피가 폭발하지만 같은 동네 커피 점포만 수백 곳, 대형 프랜차이즈가 목을 조른다. 주말이면 거리가 비워진다.",
     traffic: [40, 82, 74, 52, 46, 38, 100, 92, 62, 56, 44, 36, 26, 16, 10, 6, 4],
     mix: { office_worker: 62, cafe_studier: 6, mz_hotple: 12, local_resident: 8, delivery_customer: 12 },
     lease: { deposit: 4500, keyMoney: 3800, monthlyRent: 490, fitout: 800 },
@@ -383,9 +387,9 @@ export const DISTRICTS = [
     tags: ["테이크아웃", "스피드", "평일", "회의커피"],
     warning: "제조가 3분만 밀려도 직장인은 옆 프랜차이즈로 갑니다. 주말 매출은 기대하지 마세요.",
     research: {
-      rent: { title: "부동산 시세", text: "1층 12평 평균 보증금 4,500 · 월세 490. 권리금은 회수까지 최소 2년을 봐야 합니다." },
-      sales: { title: "동종업계 매출", text: "반경 300m 1인 카페 월매출 중앙값 1,900. 상위 20%는 테이크아웃 회전으로 3,200을 넘깁니다." },
-      wage: { title: "시급 가정", text: "바리스타 시급 11,000원. 보험·퇴직 적립은 월 원장에서 별도 가산하며 주휴수당은 따로 산출하지 않습니다." },
+      rent: { title: "계약 메모", text: "권리금은 회수까지 최소 2년을 봐야 합니다. 대로변 1층은 프랜차이즈와 같은 자리를 두고 경쟁합니다." },
+      sales: { title: "매출 메모", text: "출근길과 점심 직후 테이크아웃 회전이 매출을 가릅니다. 주말 매출은 기대하기 어렵습니다." },
+      wage: { title: "시급 가정", text: "구인 경쟁을 반영해 최저임금(10,320원)보다 높은 11,000원으로 가정합니다. 보험·퇴직 적립은 월 원장에서 별도 가산하며 주휴수당은 따로 산출하지 않습니다." },
     },
   },
   {
@@ -424,9 +428,9 @@ export const DISTRICTS = [
     tags: ["레트로", "골목", "저녁", "감성"],
     warning: "가시성이 낮아 초반 인지도 싸움이 깁니다. 대신 발견의 재미가 단골을 만듭니다.",
     research: {
-      rent: { title: "부동산 시세", text: "골목 2층 15평 보증금 2,800 · 월세 300. 간판 규제로 노출 간판을 못 다는 자리가 많습니다." },
-      sales: { title: "동종업계 매출", text: "골목 카페 월매출 중앙값 1,300. 인스타 태그가 붙은 집은 주말에만 400을 더 법니다." },
-      wage: { title: "인근 시급 시세", text: "시급 10,500원. 야간 마감 가능한 알바 구하기가 유독 어려운 동네입니다." },
+      rent: { title: "계약 메모", text: "골목 2층 자리를 가정합니다. 간판 규제로 노출 간판을 못 다는 자리가 많습니다." },
+      sales: { title: "매출 메모", text: "평일 낮은 직장인, 저녁·주말은 골목 탐방 손님입니다. SNS에 알려진 집은 주말 매출이 크게 뜁니다." },
+      wage: { title: "시급 가정", text: "야간 마감 인력 구하기가 어렵다는 가정으로 10,500원을 씁니다(2026 최저임금 10,320원)." },
     },
   },
   {
@@ -450,7 +454,7 @@ export const DISTRICTS = [
     name: "성수동 카페거리",
     shortName: "성수동",
     tagline: "서울 카페 씬의 최전선",
-    description: "공장 개조 카페의 성지. 주말 유동은 서울 최고지만 한 집 건너 카페고, 권리금은 화제성을 먹고 자란다. 재방문보다 첫 방문이 많은 동네.",
+    description: "공장 개조 카페의 성지. 한 집 건너 카페고, 권리금은 화제성을 먹고 자란다. 재방문보다 첫 방문이 많은 동네.",
     traffic: [8, 15, 18, 22, 32, 50, 58, 66, 78, 86, 92, 100, 96, 88, 76, 60, 40],
     mix: { office_worker: 14, cafe_studier: 10, mz_hotple: 52, local_resident: 12, delivery_customer: 12 },
     lease: { deposit: 3300, keyMoney: 4200, monthlyRent: 380, fitout: 850 },
@@ -465,9 +469,9 @@ export const DISTRICTS = [
     tags: ["인스타", "주말", "시그니처", "첫방문"],
     warning: "비주얼 없는 메뉴는 존재하지 않는 것과 같습니다. 대신 유행이 지나면 권리금부터 빠집니다.",
     research: {
-      rent: { title: "부동산 시세", text: "연무장길 1층 보증금 3,300 · 월세 380 · 권리금 4,200. 권리금이 유행을 따라 움직입니다." },
-      sales: { title: "동종업계 매출", text: "주말 하루가 평일 이틀치. 시그니처 음료 보유 매장의 객단가가 평균보다 34% 높습니다." },
-      wage: { title: "인근 시급 시세", text: "시급 10,700원. 라떼아트 가능 바리스타는 웃돈이 붙습니다." },
+      rent: { title: "계약 메모", text: "권리금이 유행을 따라 움직입니다. 화제성이 꺼지면 권리금부터 빠집니다." },
+      sales: { title: "매출 메모", text: "주말 하루가 평일 이틀치라는 가정입니다. 시그니처 메뉴가 객단가를 끌어올립니다." },
+      wage: { title: "시급 가정", text: "라떼아트 가능 바리스타에 웃돈이 붙는다는 가정으로 10,700원을 씁니다(2026 최저임금 10,320원)." },
     },
   },
   {
@@ -504,9 +508,9 @@ export const DISTRICTS = [
     tags: ["카공", "가성비", "시험기간", "콘센트"],
     warning: "카공족은 매출을 깔아주지만 좌석을 잠급니다. 회전과 단골 사이의 균형이 전부입니다.",
     research: {
-      rent: { title: "부동산 시세", text: "대로변 이면 1층 보증금 2,200 · 월세 240. 방학이 끼면 유동이 25% 빠집니다." },
-      sales: { title: "동종업계 매출", text: "카공 허용 카페의 객단가 5,100원, 체류 2.8시간. 회전형 카페는 객단가는 같고 체류만 짧습니다." },
-      wage: { title: "시급 가정", text: "시급 10,320원. 학생 알바 지원이 많은 대학가라는 합성 시나리오입니다." },
+      rent: { title: "계약 메모", text: "대로변 이면 1층을 가정합니다. 방학이 끼면 유동이 크게 빠지는 동네입니다." },
+      sales: { title: "매출 메모", text: "카공 손님은 객단가가 낮고 오래 머뭅니다. 좌석 회전과 단골 사이의 균형이 매출을 정합니다." },
+      wage: { title: "시급 가정", text: "학생 지원자가 많다는 가정으로 2026 최저임금 10,320원을 씁니다." },
     },
   },
   {
@@ -528,7 +532,7 @@ export const DISTRICTS = [
     number: "05",
     name: "강동 주거단지",
     shortName: "강동",
-    tagline: "낮은 월세, 유모차와 배달의 동네",
+    tagline: "주민은 가장 많고, 점포당 매출은 가장 얇은 동네",
     description: "대단지 아파트 상가. 오전 브런치 주민과 오후 유모차 부대, 저녁엔 디저트 배달이 돈다. 화려하지 않지만 재방문이 쌓이는 동네.",
     traffic: [22, 40, 46, 42, 55, 64, 58, 62, 70, 66, 60, 72, 85, 100, 80, 58, 40],
     mix: { office_worker: 10, cafe_studier: 10, mz_hotple: 6, local_resident: 52, delivery_customer: 22 },
@@ -544,12 +548,31 @@ export const DISTRICTS = [
     tags: ["주민", "디저트", "배달", "재방문"],
     warning: "첫 달 화제성은 없습니다. 일관된 맛과 청결이 유일한 마케팅입니다.",
     research: {
-      rent: { title: "부동산 시세", text: "단지 상가 1층 보증금 1,800 · 월세 190. 5개 상권 중 고정비가 가장 가볍습니다." },
-      sales: { title: "동종업계 매출", text: "주거상권 카페 월매출 중앙값 1,100. 디저트·배달 병행 매장은 1,600까지 올라갑니다." },
-      wage: { title: "시급 가정", text: "시급 10,320원(2026 최저임금). 오전 근무 지원이 꾸준하다는 게임 가정입니다." },
+      rent: { title: "계약 메모", text: "대단지 아파트 상가 1층을 가정합니다. 권리금이 낮은 대신 화제성도 없습니다." },
+      sales: { title: "매출 메모", text: "오전 브런치와 하교 시간, 저녁 디저트 배달이 매출을 받칩니다. 재방문이 쌓여야 버팁니다." },
+      wage: { title: "시급 가정", text: "오전 근무 지원이 꾸준하다는 가정으로 2026 최저임금 10,320원을 씁니다." },
     },
   },
 ];
+
+// ── 공공데이터 → 게임 값 ─────────────────────────────────────
+// 월세: 행정동 3.3㎡당 월환산임대료(보증금 환산분 포함) × 기준 12평. 을지로는 골목 2층이라 1층 외 값을 쓴다.
+// 보증금: 월세 10개월치(상가 계약 관행 가정). 권리금·인테리어는 게임 가정 그대로.
+// 경쟁: 행정동 커피-음료 점포 수를 5개 상권 안에서 50~90으로 환산.
+// 수요: 기준 매장(스페셜티·18석)의 연평균 월매출이 '행정동 점포당 실제 월매출 × STORE_SCALE'이 되도록 맞춘 계수.
+export const LEASE_RULE = { basePyeong: LEASE_BASE_PYEONG, depositMonths: 10, upperFloorDistricts: ["euljiro"] };
+export const STORE_SCALE = 1; // 기준 매장(스페셜티·12평·18석)을 그 동네 평균 점포로 본다(규모 보정 없음)
+const DEMAND_INDEX = { gangnam: 1.693, euljiro: 0.428, seongsu: 0.304, sinchon: 0.983, gangdong: 0.302 }; // tools/calibrate.mjs로 산출 (2026 2Q)
+const storeCounts = DISTRICTS.map((district) => PUBLIC_DISTRICTS[district.id].area.stores);
+for (const district of DISTRICTS) {
+  const area = PUBLIC_DISTRICTS[district.id].area;
+  const upper = LEASE_RULE.upperFloorDistricts.includes(district.id);
+  district.public = { ...PUBLIC_DISTRICTS[district.id], rentFloor: upper ? "1층 외" : "1층" };
+  district.lease.monthlyRent = Math.round(((upper ? area.rentUpperFloor : area.rentFirstFloor) * LEASE_RULE.basePyeong) / 10000);
+  district.lease.deposit = district.lease.monthlyRent * LEASE_RULE.depositMonths;
+  district.competition = Math.round(50 + 40 * (area.stores - Math.min(...storeCounts)) / (Math.max(...storeCounts) - Math.min(...storeCounts)));
+  district.demand = DEMAND_INDEX[district.id];
+}
 
 // 카페 유형 — 좌석·제조력·고용 구조를 통째로 바꾼다.
 export const FORMATS = [

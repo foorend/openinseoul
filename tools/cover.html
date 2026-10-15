@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>OPEN IN SEOUL — 모두의창업 프로필 배경 생성기</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/neodgm/neodgm-webfont@1.530/neodgm/style.css" />
+    <style>
+      html, body { margin: 0; background: #0c0908; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <!-- 모두의창업 프로필 배경: 데스크톱 846×115(약 7.4:1), 모바일은 높이 90px로 가운데(x≈494–1554)만 보인다.
+         이미지 좌표 기준 가림 영역 — 데스크톱: 사진 x97–334·y111↓, 배지 x1796–2000·y48–136
+         모바일: 사진 x543–778·y117↓, 배지 x1285–1517·y37–148. 워드마크는 둘 다 피하는 x800–1340·y150–212. -->
+    <canvas id="cover" width="2048" height="278"></canvas>
+    <script>
+      const W = 2048, H = 278, STREET = 222;
+      const C = { ink: "#0F0B09", crema: "#D9A441", cremaSoft: "#F0C674", copper: "#B4674D", steam: "#F6EEDF", muted: "#8C7A6C" };
+      const ctx = document.querySelector("#cover").getContext("2d");
+      const rand = (() => { let s = 20261015; return () => ((s = (s * 1103515245 + 12345) % 2147483648) / 2147483648); })();
+      const glow = (x, y, r, color, a) => {
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, color); g.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.globalAlpha = a; ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.globalAlpha = 1;
+      };
+
+      function draw() {
+        // 하늘
+        const sky = ctx.createLinearGradient(0, 0, 0, STREET);
+        sky.addColorStop(0, "#0A1020"); sky.addColorStop(0.7, "#1A2036"); sky.addColorStop(1, "#33263A");
+        ctx.fillStyle = sky; ctx.fillRect(0, 0, W, STREET);
+        for (let i = 0; i < 140; i += 1) {
+          ctx.globalAlpha = 0.15 + rand() * 0.5; ctx.fillStyle = C.steam;
+          ctx.fillRect(Math.floor(rand() * W), Math.floor(rand() * 110), 2, 2);
+        }
+        ctx.globalAlpha = 1;
+
+        // 빌딩 스카이라인 (글자 뒤는 불을 줄여 대비 확보)
+        let x = 0;
+        while (x < W) {
+          const w = 70 + Math.floor(rand() * 90);
+          const top = 70 + Math.floor(rand() * 90);
+          ctx.fillStyle = rand() < 0.5 ? "#121A2A" : "#161E30";
+          ctx.fillRect(x, top, w, STREET - top);
+          const behindText = (x + w > 780 && x < 1380) || x + w > 1500;
+          for (let wy = top + 10; wy < STREET - 12; wy += 16) {
+            for (let wx = x + 8; wx < x + w - 14; wx += 18) {
+              if (rand() < (behindText ? 0.16 : 0.5)) {
+                ctx.fillStyle = rand() < 0.75 ? C.crema : C.cremaSoft;
+                ctx.globalAlpha = behindText ? 0.45 : 0.85;
+                ctx.fillRect(wx, wy, 11, 8);
+              }
+            }
+          }
+          ctx.globalAlpha = 1;
+          x += w + Math.floor(rand() * 10);
+        }
+
+        // 거리: 인도 + 도로 + 차선
+        ctx.fillStyle = "#221A15"; ctx.fillRect(0, STREET, W, 16);
+        ctx.fillStyle = "#120D0B"; ctx.fillRect(0, STREET + 16, W, H - STREET - 16);
+        ctx.fillStyle = "#3B2E25";
+        for (let lx = 10; lx < W; lx += 64) ctx.fillRect(lx, 258, 34, 4);
+
+        // 첫 카페: 아바타(좌하단)와 겹치지 않는 왼쪽 중간
+        const SX = 400, SW = 330, SY = 112;
+        ctx.fillStyle = "#17120F"; ctx.fillRect(SX - 8, SY - 8, SW + 16, STREET - SY + 8);
+        const warm = ctx.createLinearGradient(0, SY + 34, 0, STREET);
+        warm.addColorStop(0, "#F6E3BC"); warm.addColorStop(1, "#C99552");
+        ctx.fillStyle = warm; ctx.fillRect(SX, SY + 34, SW, STREET - SY - 34);
+        ctx.fillStyle = "#1B1512"; ctx.fillRect(SX - 8, SY - 8, SW + 16, 40);
+        ctx.fillStyle = C.steam; ctx.font = "700 22px 'Apple SD Gothic Neo', system-ui, sans-serif";
+        ctx.textBaseline = "middle"; ctx.textAlign = "left";
+        ctx.fillText("OPEN IN SEOUL", SX + 10, SY + 12);
+        ctx.fillStyle = C.crema; ctx.fillRect(SX + SW - 76, SY - 8, 84, 40);
+        ctx.fillStyle = C.ink; ctx.font = "800 14px ui-monospace, monospace"; ctx.textAlign = "center";
+        ctx.fillText("CAFE", SX + SW - 34, SY + 12);
+        // 바 + 손님 실루엣
+        ctx.fillStyle = "#5A3E2C"; ctx.fillRect(SX + 14, STREET - 34, SW - 28, 8);
+        for (const [px, c] of [[SX + 70, "#4A5A6E"], [SX + 150, "#7A5A6E"], [SX + 220, "#4E7A58"], [SX + 280, "#B4674D"]]) {
+          ctx.fillStyle = c; ctx.fillRect(px - 7, STREET - 52, 14, 18);
+          ctx.fillStyle = "#3A2718"; ctx.fillRect(px - 6, STREET - 66, 12, 12);
+        }
+        glow(SX + SW / 2, STREET + 10, 230, C.cremaSoft, 0.28);
+
+        // 워드마크: 모바일 사진 오른쪽·배지 아래 띠 (데스크톱도 같은 자리)
+        const TX = 800;
+        const dark = ctx.createRadialGradient(1070, 160, 40, 1070, 160, 480);
+        dark.addColorStop(0, "rgba(10,12,22,.8)"); dark.addColorStop(1, "rgba(10,12,22,0)");
+        ctx.fillStyle = dark; ctx.fillRect(590, 0, 960, STREET);
+        ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+        ctx.fillStyle = C.copper; ctx.font = "30px NeoDunggeunmo";
+        ctx.fillText(": CAFE", TX + 4, 118);
+        ctx.fillStyle = "#CDBFAE"; ctx.font = "700 24px 'Apple SD Gothic Neo', system-ui, sans-serif";
+        ctx.fillText("서울 카페 창업 시뮬레이션", TX + 128, 117);
+        ctx.font = "84px NeoDunggeunmo";
+        ctx.shadowColor = "rgba(217,164,65,.45)"; ctx.shadowBlur = 18;
+        ctx.fillStyle = C.steam; ctx.fillText("OPEN IN", TX, 206);
+        ctx.fillStyle = C.crema; ctx.fillText("SEOUL", TX + ctx.measureText("OPEN IN ").width, 206);
+        ctx.shadowBlur = 0;
+
+        // 우측 문구 + 주소 (데스크톱 전용, 배지 아래)
+        const shade = ctx.createLinearGradient(1450, 0, W, 0);
+        shade.addColorStop(0, "rgba(10,12,22,0)"); shade.addColorStop(0.35, "rgba(10,12,22,.82)");
+        ctx.fillStyle = shade; ctx.fillRect(1450, 140, W - 1450, STREET - 140);
+        ctx.textAlign = "right";
+        ctx.fillStyle = "#E6D9C6"; ctx.font = "700 26px 'Apple SD Gothic Neo', system-ui, sans-serif";
+        ctx.fillText("카페를 열기 전에,", W - 52, 172);
+        ctx.fillText("게임에서 먼저 한 번 망해보세요", W - 52, 206);
+        ctx.fillStyle = C.muted; ctx.font = "22px NeoDunggeunmo";
+        ctx.fillText("openinseoul.foodtrend.news", W - 52, 254);
+
+        document.title = "READY";
+      }
+      document.fonts.load("92px NeoDunggeunmo").then(draw, draw);
+    </script>
+  </body>
+</html>

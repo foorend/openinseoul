@@ -3239,3 +3239,23 @@ body[data-view="report"] .toast-region, body[data-view="monthClose"] .toast-regi
   .compact-report .report-kpi strong { overflow-wrap: normal; white-space: nowrap; }
   .compact-report .report-kpi > small { grid-column: 1 / -1; }
 }
+
+/* 화면 아래 출처 바 — 지금 보이는 숫자가 어느 공공데이터·가정에서 왔는지 작게 계속 보여 준다 */
+:root { --source-bar-h: 36px; }
+.source-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 36;
+  box-sizing: border-box; height: calc(var(--source-bar-h) + env(safe-area-inset-bottom));
+  padding: 7px max(16px, calc((100vw - 1280px) / 2)) calc(7px + env(safe-area-inset-bottom));
+  background: rgba(15, 11, 9, 0.94); border-top: 1px solid var(--line-soft);
+  color: var(--muted); font-size: 12px; line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.source-bar:empty { display: none; }
+.source-bar .source-toggle { min-height: 0; min-width: 0; margin-left: 6px; color: var(--crema); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; }
+.app-shell { padding-bottom: calc(var(--source-bar-h) + env(safe-area-inset-bottom)); }
+.compact-report .report-actions { bottom: calc(var(--source-bar-h) + env(safe-area-inset-bottom)); }
+.toast-region { bottom: calc(44px + var(--source-bar-h)); }
+body[data-view="report"] .toast-region, body[data-view="monthClose"] .toast-region, body[data-view="final"] .toast-region { bottom: calc(125px + var(--source-bar-h)); }
+.research-row.is-public .research-text { color: var(--steam); }
+.research-notes-label { display: block; margin-top: 14px; }
+@media (max-width: 640px) { :root { --source-bar-h: 52px; } .source-bar { font-size: 11px; } }

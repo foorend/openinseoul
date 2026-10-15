@@ -23,7 +23,7 @@ import {
   REGULAR_NAMES,
   WEATHER,
   getById,
-} from "./data.js?release=20261006d";
+} from "./data.js?release=20261015";
 
 const FORMAT_FIT = {
   solo_cafe: { office_worker: 1, cafe_studier: 0.7, mz_hotple: 0.55, local_resident: 0.82, delivery_customer: 0.6 },
@@ -238,7 +238,8 @@ function createArrivalSchedule({ seed, day, district, campaigns, awareness, weat
   district.traffic.forEach((trafficValue, hourIndex) => {
     const hour = GAME_CONFIG.earliestOpenHour + hourIndex;
     if (hour < openHour || hour >= closeHour) return;
-    const base = trafficValue * GAME_CONFIG.demandScale * weekendFactor * weather.footfall * demandFactor;
+    // district.demand: 행정동 커피-음료 점포당 실제 매출에 맞춘 상권 수요 계수(data.js · tools/calibrate.mjs)
+    const base = trafficValue * GAME_CONFIG.demandScale * (district.demand ?? 1) * weekendFactor * weather.footfall * demandFactor;
     const baseCount = Math.floor(base);
     const extra = keyedRandom(seed, day, hour, "count") < base - baseCount ? 1 : 0;
     const count = Math.max(2, baseCount + extra);

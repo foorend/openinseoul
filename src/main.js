@@ -35,18 +35,19 @@ import {
   MENUS,
   OWNER_ROLES,
   getById,
-} from "./data.js?release=20261006d";
-import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost } from "./sim.js?release=20261006d";
-import { GameScene, HeroScene } from "./scene.js?release=20261006d";
-import { mountIllustration } from "./visuals.js?release=20261006d";
-import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261006d";
-import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261006d";
-import { Tutorial } from "./tutorial.js?release=20261006d";
-import { ARCADE_BY_STATION, FlyerRun } from "./arcade.js?release=20261006d";
-import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261006d";
-import { sourceMarkup } from "./sources.js?release=20261006d";
-import { buildCoach, narrateCoach } from "./coach.js?release=20261006d";
-import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261006d";
+  PUBLIC_META,
+} from "./data.js?release=20261015";
+import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost } from "./sim.js?release=20261015";
+import { GameScene, HeroScene } from "./scene.js?release=20261015";
+import { mountIllustration } from "./visuals.js?release=20261015";
+import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261015";
+import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261015";
+import { Tutorial } from "./tutorial.js?release=20261015";
+import { ARCADE_BY_STATION, FlyerRun } from "./arcade.js?release=20261015";
+import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261015";
+import { publicRows, sourceLine, sourceMarkup } from "./sources.js?release=20261015";
+import { buildCoach, narrateCoach } from "./coach.js?release=20261015";
+import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261015";
 
 const screen = document.querySelector("#screen");
 const topbarStatus = document.querySelector("#topbar-status");
@@ -56,6 +57,7 @@ const helpToggle = document.querySelector("#help-toggle");
 const helpDialog = document.querySelector("#help-dialog");
 const helpClose = document.querySelector("#help-close");
 const toastRegion = document.querySelector("#toast-region");
+const sourceBar = document.querySelector("#source-bar");
 
 const state = {
   view: "landing",
@@ -290,7 +292,9 @@ function render() {
   else if (state.view === "final") renderYearEnd();
   if (["report", "monthClose", "final"].includes(state.view)) compactReport();
   if (state.learning && state.view !== "landing") screen.querySelector(state.view === "operations" ? ".ops-rail" : "section")?.insertAdjacentHTML("afterbegin", `<div class="source-strip">익명 수업 ${escapeHtml(state.learning.classCode)} · 공통 자본 1억 5천만원 · ${state.learning.goal === "hours" ? "사장 노동시간 비교" : "현금과 손익 구분"} <button class="text-button learning-open" type="button">교육 결과 저장</button></div>`);
-  if (["wizard", "brief", "report", "monthClose", "monthPlan", "final"].includes(state.view)) screen.querySelector("section")?.insertAdjacentHTML("afterbegin", `<div class="source-strip">합성 상권 · 최저임금위 2026 / 국세청 기본세율 참고 <button class="text-button source-toggle" type="button">가정·원문·버전 확인</button></div>`);
+  // 화면 아래 출처 바: 지금 화면의 숫자가 어느 공공데이터·가정에서 왔는지 계속 보여 준다.
+  const barDistrictId = state.simulation?.district?.id ?? state.districtId ?? state.selectedDistrictId;
+  if (sourceBar) sourceBar.innerHTML = sourceLine({ view: state.view, stepId: state.view === "wizard" ? activeSteps()[state.step]?.id : null, district: barDistrictId ? getById(DISTRICTS, barDistrictId) : null });
   // 렌더 직후 두 프레임 뒤(폰트·캔버스 마운트 반영 후)에 화면을 맞춘다
   requestAnimationFrame(() => requestAnimationFrame(fitScreenToViewport));
 }
@@ -590,7 +594,7 @@ function districtStepMarkup() {
         ${DISTRICTS.map((district) => choiceCard({
           id: district.id, attr: "district", name: district.name, sub: district.tagline,
           art: { kind: "district", id: district.id },
-          meta: [`12평 기준 월세 ${formatMoney(district.lease.monthlyRent, true)}`, `시급 ₩${district.hourlyWage.toLocaleString("ko-KR")}`],
+          meta: [`12평 월세 ${formatMoney(district.lease.monthlyRent, true)}`, `점포당 월매출 ${Math.round(district.public.area.salesPerStoreMonthly / 10000).toLocaleString("ko-KR")}만`],
           selected: district.id === state.selectedDistrictId,
           size: "is-compact",
         })).join("")}
@@ -603,7 +607,13 @@ function districtStepMarkup() {
           <p class="detail-desc">${selected.description}</p>
           <div class="chip-row">${selected.tags.map((tag) => `<span class="chip">${tag}</span>`).join("")}</div>
           <div class="research-block">
-            <span class="label">합성 상권 시나리오 · 실제 시세 아님</span><button class="text-button source-toggle" type="button">FOOREND 가정 · 출처/기준 보기</button>
+            <span class="label">공공데이터 · ${selected.public.dongs.join("·")} · ${PUBLIC_META.quarter}</span><button class="text-button source-toggle" type="button">출처·계산 방법 보기</button>
+            ${publicRows(selected).map(([title, text]) => `
+                <div class="research-row is-open is-public">
+                  <span class="research-title">${title}</span>
+                  <span class="research-text">${text}</span>
+                </div>`).join("")}
+            <span class="label research-notes-label">현장 메모 · 게임 가정</span>
             ${state.researchBought.includes(selected.id)
               ? Object.entries(selected.research).map(([key, insight]) => `
                 <div class="research-row is-open">
@@ -616,12 +626,12 @@ function districtStepMarkup() {
                   <span class="research-text is-blurred" aria-hidden="true">${insight.text}</span>
                 </div>`).join("")}
               <button class="research-buy" id="buy-research" type="button">
-                <b>📊 상권 분석 리포트 구매 — ${formatMoney(RESEARCH_COST)}</b>
-                <span>임대·매출·시급의 합성 힌트. 실제 조사 자료 구매가 아닌 게임 선택입니다.</span>
+                <b>📝 현장 메모 열기 — ${formatMoney(RESEARCH_COST)}</b>
+                <span>권리금·매출 흐름·시급에 대한 현장 감각(게임 가정)입니다. 위 공공데이터는 무료로 공개되어 있습니다.</span>
               </button>`}
           </div>
           <div class="lease-sheet">
-            <span class="lease-note">12평 기준 게임 계약 가정 — 평수 비례 환산</span>
+            <span class="lease-note">12평 기준 — 월세: 공공데이터 · 보증금: 월세 10개월(관행 가정) · 권리금·인테리어: 게임 가정 · 평수 비례 환산</span>
             <div><span>보증금</span><b>${formatMoney(lease.deposit)}</b></div>
             <div><span>권리금</span><b>${formatMoney(lease.keyMoney)}</b></div>
             <div><span>월세</span><b>${formatMoney(lease.monthlyRent)}</b></div>
@@ -2415,7 +2425,7 @@ function mountBudgetComparison() {
     try {
       const result = compareBudget(month, read());
       const runway = result.openingCash < 0 ? "개업 전 자금 부족 — 준비자금 또는 투자금을 다시 확인하세요." : result.runway === null ? "이 단순 가정에서는 매월 자금이 줄지 않습니다. 생존 기간이나 성공을 보장하지 않습니다." : `같은 월 손익·생활비가 반복되면 약 ${result.runway.toFixed(1)}개월 후 준비자금 소진. 계절·추가 투자·연말 세금에 따라 짧아질 수 있습니다.`;
-      const lines = [`OPEN IN SEOUL · 내 조건 비교 · ${DATA_VERSION}`, `${month.monthNumber}월 합성 장부 기준 / 실제 창업 수익 예측 아님`,
+      const lines = [`OPEN IN SEOUL · 내 조건 비교 · ${DATA_VERSION}`, `${month.monthNumber}월 시뮬레이션 장부 기준(공공데이터 보정) / 실제 창업 수익 예측 아님`,
         `준비 총자금 ${formatMoney(result.inputs.capital)} / 초기 총투입금 ${formatMoney(result.inputs.investment)}`,
         `월세 ${formatMoney(result.inputs.rent)} / 생활비 ${formatMoney(result.inputs.living)}`,
         `기준 월 영업이익 ${formatMoney(result.baselineProfit)} / 기준 월세 ${formatMoney(result.baselineRent)}`,
@@ -2446,7 +2456,7 @@ function coachMarkup() {
     campaign.coachSignature = signature;
   }
   const cards = campaign.coach[campaign.month];
-  const cardMarkup = (card, index) => `<article class="coach-card"><h3>${card.title}</h3><p>${escapeHtml(card.observation ?? "다른 운영 조건도 비교해 볼 수 있습니다.")}${monthly ? " (대표 영업일을 월 단위로 환산한 합성 결과)" : ""}</p><p><b>${escapeHtml(card.from)} → ${escapeHtml(card.to)}</b></p><p id="coach-text-${card.id}">${escapeHtml(card.explanation)}</p><button class="secondary-button" data-coach-mission="${index}" type="button">내 예상부터 비교하기</button></article>`;
+  const cardMarkup = (card, index) => `<article class="coach-card"><h3>${card.title}</h3><p>${escapeHtml(card.observation ?? "다른 운영 조건도 비교해 볼 수 있습니다.")}${monthly ? " (대표 영업일을 월 단위로 환산한 시뮬레이션 결과)" : ""}</p><p><b>${escapeHtml(card.from)} → ${escapeHtml(card.to)}</b></p><p id="coach-text-${card.id}">${escapeHtml(card.explanation)}</p><button class="secondary-button" data-coach-mission="${index}" type="button">내 예상부터 비교하기</button></article>`;
   return `<section class="report-panel evidence-coach"><span class="meta-label" id="coach-mode">계산 근거 코치 · 생성 AI 미연결</span><h2>다음엔 한 가지만 바꿔보세요.</h2>${cardMarkup(cards[0], 0)}<details><summary>다른 비교 가설 ${cards.length - 1}개</summary>${cards.slice(1).map((card, index) => cardMarkup(card, index + 1)).join("")}</details><p id="mission-result" aria-live="polite"></p></section>`;
 }
 
@@ -3070,7 +3080,7 @@ const sourceDialog = document.createElement("dialog");
 sourceDialog.className = "help-dialog source-dialog";
 sourceDialog.innerHTML = `<button class="icon-button source-close" type="button">닫기</button>${sourceMarkup()}`;
 document.body.append(sourceDialog);
-document.querySelector(".footer-strip")?.insertAdjacentHTML("beforeend", `<button class="text-button source-toggle" type="button">${DATA_VERSION} · 합성 상권 / 공식 기준·출처</button>`);
+document.querySelector(".footer-strip")?.insertAdjacentHTML("beforeend", `<button class="text-button source-toggle" type="button">${DATA_VERSION} · 공공데이터 출처</button>`);
 document.querySelector(".footer-strip")?.insertAdjacentHTML("beforeend", `<button class="text-button learning-open" type="button">익명 수업·교육 결과</button>`);
 
 const learningDialog = document.createElement("dialog");

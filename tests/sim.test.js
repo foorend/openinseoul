@@ -442,7 +442,8 @@ test("the manager covers for an absent owner, just slower", () => {
   // 사장이 하루 종일 자리를 비워도 매니저가 머신을 닦고 발주를 넣는다.
   // 다만 사장이 붙어 있을 때보다 늦게, 그래서 그 사이의 기회는 날아간다.
   const build = (role) => new RestaurantSimulation({
-    seed: "MANAGER", district: getById(DISTRICTS, "seongsu"), format: getById(FORMATS, "bakery_cafe"),
+    // 실데이터 보정 후 가장 바쁜 상권(역삼1동)이어야 하루 안에 머신 마모가 쌓인다.
+    seed: "MANAGER", district: getById(DISTRICTS, "gangnam"), format: getById(FORMATS, "bakery_cafe"),
     menus: ["americano", "latte", "saltbread"].map((id) => getById(MENUS, id)),
     beanTier: getById(BEAN_TIERS, "standard"), ownerRole: getById(OWNER_ROLES, role),
     hourPlan: getById(HOUR_PLANS, "standard"), cash: 5000,
@@ -461,7 +462,7 @@ test("the manager covers for an absent owner, just slower", () => {
 
   // 직원이 없는 1인 카페에는 대신해 줄 사람이 없다.
   const solo = new RestaurantSimulation({
-    seed: "MANAGER", district: getById(DISTRICTS, "gangdong"), format: getById(FORMATS, "solo_cafe"),
+    seed: "MANAGER", district: getById(DISTRICTS, "gangnam"), format: getById(FORMATS, "solo_cafe"),
     menus: ["americano", "latte", "cheesecake"].map((id) => getById(MENUS, id)),
     beanTier: getById(BEAN_TIERS, "standard"), ownerRole: getById(OWNER_ROLES, "manager"),
     hourPlan: getById(HOUR_PLANS, "standard"), cash: 5000,
@@ -623,8 +624,9 @@ test("cutting staff hours moves the cost onto the owner, it does not delete it",
 });
 
 test("a well-chosen cafe clears the minimum wage; an over-staffed one does not", () => {
+  // 실데이터(2026 2Q) 기준 점포당 매출이 가장 높은 강남(역삼1동)에서만 직원 둔 스페셜티가 최저시급을 넘긴다.
   const good = runYearHeadless({
-    district: "seongsu", format: "specialty_cafe",
+    district: "gangnam", format: "specialty_cafe",
     menus: ["signature", "latte", "cheesecake"], bean: "specialty", role: "peak", hours: "standard",
     upgrades: ["lunch_prep", "kitchen_upgrade"],
   });
@@ -735,8 +737,9 @@ test("every dilemma option reconciles cash and profit at close", () => {
 });
 
 test("realistic monthly scale — a cafe does not print money", () => {
+  // 직원 둔 스페셜티가 버티는 상권(강남·역삼1동)에서 규모와 비용 비율이 현실 밴드 안에 있어야 한다.
   const run = runYearHeadless({
-    district: "seongsu", format: "specialty_cafe",
+    district: "gangnam", format: "specialty_cafe",
     menus: ["signature", "latte", "cheesecake"], bean: "specialty", role: "peak", hours: "standard",
   });
   const avgRevenue = run.months.reduce((sum, m) => sum + m.revenue, 0) / 12;

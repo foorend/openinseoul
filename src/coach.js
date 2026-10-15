@@ -1,6 +1,6 @@
-import { DATA_VERSION, HOUR_PLANS, STAFFING_PLANS, OWNER_ROLES, MENUS, CUSTOMERS, getById } from "./data.js?release=20261006d";
-import { compareCondition, experimentChoices } from "./experiment.js?release=20261006d";
-import { RestaurantSimulation } from "./sim.js?release=20261006d";
+import { DATA_VERSION, HOUR_PLANS, STAFFING_PLANS, OWNER_ROLES, MENUS, CUSTOMERS, getById } from "./data.js?release=20261015";
+import { compareCondition, experimentChoices } from "./experiment.js?release=20261015";
+import { RestaurantSimulation } from "./sim.js?release=20261015";
 
 export function buildCoach(saved, context) {
   const options = [
