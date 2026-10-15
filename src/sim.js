@@ -23,7 +23,7 @@ import {
   REGULAR_NAMES,
   WEATHER,
   getById,
-} from "./data.js?release=20261015";
+} from "./data.js?release=20261015b";
 
 const FORMAT_FIT = {
   solo_cafe: { office_worker: 1, cafe_studier: 0.7, mz_hotple: 0.55, local_resident: 0.82, delivery_customer: 0.6 },

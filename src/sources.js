@@ -1,4 +1,4 @@
-import { DATA_VERSION, DISTRICTS, GAME_CONFIG, LEASE_RULE, PUBLIC_META, SEOUL_AVERAGE, STORE_SCALE } from "./data.js?release=20261015";
+import { DATA_VERSION, DISTRICTS, GAME_CONFIG, LEASE_RULE, PUBLIC_META, SEOUL_AVERAGE, STORE_SCALE } from "./data.js?release=20261015b";
 
 const GOLMOK = PUBLIC_META.url;
 const Q = PUBLIC_META.quarter;
@@ -52,22 +52,26 @@ export function publicRows(district) {
 const tag = `<button class="text-button source-toggle" type="button">출처 보기</button>`;
 const base = `서울시 상권분석서비스(커피-음료) ${Q}`;
 
-// 화면 아래 출처 바 한 줄. 지금 화면에 나온 숫자가 어디서 왔는지 짧게 말한다.
-export function sourceLine({ view, stepId, district }) {
-  if (!district || view === "landing") return `📊 ${base} 행정동 데이터 · 최저임금 2026 · 국세청 세율로 계산합니다 ${tag}`;
+// 화면 아래 출처 바. 글은 최대 두 줄로 줄이고 '출처 보기' 버튼은 늘 보이게 따로 둔다.
+export function sourceLine(context) {
+  return `<span class="source-text">${sourceText(context)}</span>${tag}`;
+}
+
+function sourceText({ view, stepId, district }) {
+  if (!district || view === "landing") return `📊 ${base} 행정동 데이터 · 최저임금 2026 · 국세청 세율로 계산합니다`;
   const { area, dongs } = district.public;
   const place = `${district.shortName}=${dongs.join("·")}`;
   if (view === "wizard" && stepId === "district") {
     const survival = survivalFor(district);
-    return `📊 ${place} · 1층 3.3㎡당 ${won(area.rentFirstFloor)} · 점포당 월매출 ${man(area.salesPerStoreMonthly)} · 커피 점포 ${area.stores}곳 · 3년 생존 ${survival.rate}% — ${base} ${tag}`;
+    return `📊 ${place} · 1층 3.3㎡당 ${won(area.rentFirstFloor)} · 점포당 월매출 ${man(area.salesPerStoreMonthly)} · 커피 점포 ${area.stores}곳 · 3년 생존 ${survival.rate}% — ${base}`;
   }
-  if (view === "wizard") return `📊 시급: 2026 최저임금 ${GAME_CONFIG.minimumWage.toLocaleString("ko-KR")}원(최저임금위원회) + 상권 가정 · 월세: ${place} 실측 기반 ${district.lease.monthlyRent}만(12평) — ${base} ${tag}`;
+  if (view === "wizard") return `📊 시급: 2026 최저임금 ${GAME_CONFIG.minimumWage.toLocaleString("ko-KR")}원(최저임금위원회) + 상권 가정 · 월세: ${place} 실측 기반 ${district.lease.monthlyRent}만(12평) — ${base}`;
   if (view === "final") {
     const survival = survivalFor(district);
-    return `📊 현실 비교: ${survival.where} 커피-음료 3년 생존율 ${survival.rate}% · 평균 영업 ${survival.years}년 · 폐업률 ${area.closeRate}% — ${base} ${tag}`;
+    return `📊 현실 비교: ${survival.where} 커피-음료 3년 생존율 ${survival.rate}% · 평균 영업 ${survival.years}년 · 폐업률 ${area.closeRate}% — ${base}`;
   }
-  if (["brief", "operations"].includes(view)) return `📊 ${place} 수요는 점포당 실제 월매출 ${man(area.salesPerStoreMonthly)}에 맞춰 보정 · 월세 ${district.lease.monthlyRent}만(12평, 실측 기반) · 손님 행동은 게임 가정 ${tag}`;
-  return `📊 월세 ${district.lease.monthlyRent}만(12평, ${base}) · 인건비 2026 최저임금 기준 · 부가세 수입÷11 적립(국세청) · 권리금·원가는 게임 가정 ${tag}`;
+  if (["brief", "operations"].includes(view)) return `📊 ${place} 수요는 점포당 실제 월매출 ${man(area.salesPerStoreMonthly)}에 맞춰 보정 · 월세 ${district.lease.monthlyRent}만(12평, 실측 기반) · 손님 행동은 게임 가정`;
+  return `📊 월세 ${district.lease.monthlyRent}만(12평, ${base}) · 인건비 2026 최저임금 기준 · 부가세 수입÷11 적립(국세청) · 권리금·원가는 게임 가정`;
 }
 
 export function sourceMarkup() {

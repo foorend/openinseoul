@@ -1,6 +1,6 @@
-import { clamp, phaseAt } from "./sim.js?release=20261015";
-import { figure, glowDot, grain, lightCone, vignette } from "./visuals.js?release=20261015";
-import { loadArt, artReady, drawBackplate, drawFigure, figureKeyFor, drawTableProp, coverDraw, ANCHOR } from "./art.js?release=20261015";
+import { clamp, phaseAt } from "./sim.js?release=20261015b";
+import { figure, glowDot, grain, lightCone, vignette } from "./visuals.js?release=20261015b";
+import { loadArt, artReady, drawBackplate, drawFigure, figureKeyFor, drawTableProp, coverDraw, ANCHOR } from "./art.js?release=20261015b";
 
 loadArt();
 

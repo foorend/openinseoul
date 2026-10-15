@@ -36,18 +36,19 @@ import {
   OWNER_ROLES,
   getById,
   PUBLIC_META,
-} from "./data.js?release=20261015";
-import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost } from "./sim.js?release=20261015";
-import { GameScene, HeroScene } from "./scene.js?release=20261015";
-import { mountIllustration } from "./visuals.js?release=20261015";
-import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261015";
-import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261015";
-import { Tutorial } from "./tutorial.js?release=20261015";
-import { ARCADE_BY_STATION, FlyerRun } from "./arcade.js?release=20261015";
-import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261015";
-import { publicRows, sourceLine, sourceMarkup } from "./sources.js?release=20261015";
-import { buildCoach, narrateCoach } from "./coach.js?release=20261015";
-import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261015";
+  SEOUL_AVERAGE,
+} from "./data.js?release=20261015b";
+import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost } from "./sim.js?release=20261015b";
+import { GameScene, HeroScene } from "./scene.js?release=20261015b";
+import { mountIllustration } from "./visuals.js?release=20261015b";
+import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261015b";
+import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261015b";
+import { Tutorial } from "./tutorial.js?release=20261015b";
+import { ARCADE_BY_STATION, FlyerRun } from "./arcade.js?release=20261015b";
+import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261015b";
+import { publicRows, sourceLine, sourceMarkup, survivalFor } from "./sources.js?release=20261015b";
+import { buildCoach, narrateCoach } from "./coach.js?release=20261015b";
+import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261015b";
 
 const screen = document.querySelector("#screen");
 const topbarStatus = document.querySelector("#topbar-status");
@@ -58,6 +59,7 @@ const helpDialog = document.querySelector("#help-dialog");
 const helpClose = document.querySelector("#help-close");
 const toastRegion = document.querySelector("#toast-region");
 const sourceBar = document.querySelector("#source-bar");
+const openDetails = new Set();  // 다시 그려도 펼쳐 둔 상세(<details data-key>)는 그대로 둔다
 
 const state = {
   view: "landing",
@@ -316,9 +318,7 @@ function renderLanding() {
             <button class="primary-button is-hero is-mega" id="start-game" aria-label="3가지 결정으로 개업하기" type="button"><span>3가지 결정으로 개업하기</span><span aria-hidden="true">→</span></button>
           </div>
           <button class="text-button" id="advanced-setup" type="button">원두·집기·메뉴까지 직접 설계하기</button>
-          <p><button class="text-button learning-open" type="button">${state.learning ? `${escapeHtml(state.learning.classCode)} 수업 참여 중 · 결과 저장` : "익명 수업·파일럿 참여"}</button> · <a class="text-button" href="./education.html" target="_blank" rel="noopener">강사용 결과 도구</a></p>
-
-          <p class="hero-subcopy">강남·을지로·성수·신촌·강동.<br />자본 규모부터 상권까지 직접 정하는<br /><em>현실적인 서울에서 카페 차리기 대작전!</em></p>
+          <p class="hero-class-links">수업에서 쓰기: <button class="text-button learning-open" type="button">${state.learning ? `${escapeHtml(state.learning.classCode)} 수업 참여 중 · 결과 저장` : "익명 수업 참여"}</button> · <a class="text-button" href="./education.html" target="_blank" rel="noopener">강사용 결과 도구</a></p>
         </div>
         <div class="hero-meta">
           <div><span class="meta-label">캠페인</span><strong>1월 → 12월</strong></div>
@@ -588,13 +588,18 @@ function choiceCard({ id, attr, name, sub, art, artExtra, meta, selected, disabl
 function districtStepMarkup() {
   const selected = getById(DISTRICTS, state.selectedDistrictId);
   const lease = selected.lease;
+  const { area, dongs } = selected.public;
+  const survival = survivalFor(selected);
+  const bought = state.researchBought.includes(selected.id);
+  const more = (key, summary, inner) => `<details class="detail-more" data-key="${key}" ${openDetails.has(key) ? "open" : ""}><summary>${summary}</summary><div class="detail-more-body">${inner}</div></details>`;
+  const row = (title, text, extra = "") => `<div class="research-row ${extra}"><span class="research-title">${title}</span><span class="research-text ${extra === "is-locked" ? "is-blurred" : ""}" ${extra === "is-locked" ? 'aria-hidden="true"' : ""}>${text}</span></div>`;
   return `
     <div class="district-layout">
       <div class="district-picker">
         ${DISTRICTS.map((district) => choiceCard({
           id: district.id, attr: "district", name: district.name, sub: district.tagline,
           art: { kind: "district", id: district.id },
-          meta: [`12평 월세 ${formatMoney(district.lease.monthlyRent, true)}`, `점포당 월매출 ${Math.round(district.public.area.salesPerStoreMonthly / 10000).toLocaleString("ko-KR")}만`],
+          meta: [`12평 월세 ${formatMoney(district.lease.monthlyRent, true)}`, `점포당 월매출 ${formatMoney(district.public.area.salesPerStoreMonthly / 10000, true)}`],
           selected: district.id === state.selectedDistrictId,
           size: "is-compact",
         })).join("")}
@@ -605,39 +610,26 @@ function districtStepMarkup() {
         </div>
         <div class="detail-body">
           <p class="detail-desc">${selected.description}</p>
-          <div class="chip-row">${selected.tags.map((tag) => `<span class="chip">${tag}</span>`).join("")}</div>
-          <div class="research-block">
-            <span class="label">공공데이터 · ${selected.public.dongs.join("·")} · ${PUBLIC_META.quarter}</span><button class="text-button source-toggle" type="button">출처·계산 방법 보기</button>
-            ${publicRows(selected).map(([title, text]) => `
-                <div class="research-row is-open is-public">
-                  <span class="research-title">${title}</span>
-                  <span class="research-text">${text}</span>
-                </div>`).join("")}
-            <span class="label research-notes-label">현장 메모 · 게임 가정</span>
-            ${state.researchBought.includes(selected.id)
-              ? Object.entries(selected.research).map(([key, insight]) => `
-                <div class="research-row is-open">
-                  <span class="research-title">${insight.title}</span>
-                  <span class="research-text">${insight.text}</span>
-                </div>`).join("")
-              : `${Object.entries(selected.research).map(([key, insight]) => `
-                <div class="research-row is-locked">
-                  <span class="research-title">${insight.title}</span>
-                  <span class="research-text is-blurred" aria-hidden="true">${insight.text}</span>
-                </div>`).join("")}
+          <dl class="key-stats" aria-label="${dongs.join("·")} 공공데이터 ${PUBLIC_META.quarter}">
+            <div><dt>12평 월세</dt><dd>${formatMoney(lease.monthlyRent, true)}</dd></div>
+            <div><dt>점포당 월매출</dt><dd>${formatMoney(area.salesPerStoreMonthly / 10000, true)}</dd><small>서울 ${formatMoney(SEOUL_AVERAGE.salesPerStoreMonthly / 10000, true)}</small></div>
+            <div><dt>3년 생존율</dt><dd>${survival.rate}%</dd><small>서울 ${SEOUL_AVERAGE.survival3y}%</small></div>
+          </dl>
+          <p class="detail-warning">${selected.warning}</p>
+          ${more("public", `공공데이터 전체 · ${dongs.join("·")}`, `${publicRows(selected).map(([title, text]) => row(title, text, "is-open is-public")).join("")}<button class="text-button source-toggle" type="button">출처·계산 방법</button>`)}
+          ${more("lease", `계약 비용 · 보증금 ${formatMoney(lease.deposit, true)} · 권리금 ${formatMoney(lease.keyMoney, true)}`, `<div class="lease-sheet">
+              <div><span>보증금</span><b>${formatMoney(lease.deposit)}</b></div>
+              <div><span>권리금</span><b>${formatMoney(lease.keyMoney)}</b></div>
+              <div><span>월세</span><b>${formatMoney(lease.monthlyRent)}</b></div>
+              <div><span>인테리어</span><b>${formatMoney(lease.fitout)}</b></div>
+            </div><p class="lease-note">12평 기준·평수 비례. 월세는 공공데이터, 보증금은 월세 10개월(관행 가정), 권리금·인테리어는 게임 가정입니다.</p>`)}
+          ${more("notes", "현장 메모 · 게임 가정", bought
+            ? Object.values(selected.research).map((insight) => row(insight.title, insight.text, "is-open")).join("")
+            : `${Object.values(selected.research).map((insight) => row(insight.title, insight.text, "is-locked")).join("")}
               <button class="research-buy" id="buy-research" type="button">
                 <b>📝 현장 메모 열기 — ${formatMoney(RESEARCH_COST)}</b>
-                <span>권리금·매출 흐름·시급에 대한 현장 감각(게임 가정)입니다. 위 공공데이터는 무료로 공개되어 있습니다.</span>
-              </button>`}
-          </div>
-          <div class="lease-sheet">
-            <span class="lease-note">12평 기준 — 월세: 공공데이터 · 보증금: 월세 10개월(관행 가정) · 권리금·인테리어: 게임 가정 · 평수 비례 환산</span>
-            <div><span>보증금</span><b>${formatMoney(lease.deposit)}</b></div>
-            <div><span>권리금</span><b>${formatMoney(lease.keyMoney)}</b></div>
-            <div><span>월세</span><b>${formatMoney(lease.monthlyRent)}</b></div>
-            <div><span>인테리어</span><b>${formatMoney(lease.fitout)}</b></div>
-          </div>
-          <p class="detail-warning">${selected.warning}</p>
+                <span>권리금·매출 흐름·시급에 대한 현장 감각(게임 가정)입니다. 공공데이터는 무료로 공개되어 있습니다.</span>
+              </button>`)}
         </div>
       </aside>
     </div>`;
@@ -667,7 +659,7 @@ function renderWizard() {
       .map((line) => ({ label: line.label, delta: line.value - (state.pageStart.lines[line.label] ?? 0) }))
       .filter((line) => line.delta > 0)
     : [];
-  topbarStatus.innerHTML = statusMarkup(`STEP ${String(state.step + 1).padStart(2, "0")} / ${step.label}`);
+  topbarStatus.innerHTML = "";  // 단계 표시는 위저드 바(n/전체) 하나만 둔다
 
   let body = "";
   let lockedChoices = false;  // 이 페이지에 자본 부족으로 잠긴 카드가 있나 — 있으면 대출 버튼을 연다
@@ -862,7 +854,6 @@ function renderWizard() {
       </header>
 
       <div class="wizard-head">
-        <p class="kicker">${step.kicker}</p>
         <h1>${step.title}<em>${step.accent}</em></h1>
         <p class="lede">${step.lede}</p>
       </div>
@@ -891,6 +882,9 @@ function renderWizard() {
 
   clearIllustrations();
   mountStepArt(screen);
+  screen.querySelectorAll("details[data-key]").forEach((details) => details.addEventListener("toggle", () => {
+    if (details.open) openDetails.add(details.dataset.key); else openDetails.delete(details.dataset.key);
+  }));
 
   document.querySelector("#take-loan")?.addEventListener("click", () => {
     if (state.loanUnits >= LOAN_MAX_UNITS) return;
@@ -957,8 +951,9 @@ function renderWizard() {
     const costsNow = setupCosts();
     if (costsNow.remaining < RESEARCH_COST) { toast("자본이 부족합니다. 분석은 포기하고 감으로 가야 할 수도요."); sounds.bad(); return; }
     state.researchBought = [...state.researchBought, districtId];
+    openDetails.add("notes");
     sounds.good();
-    toast(`${getById(DISTRICTS, districtId).shortName} 분석 리포트 구매 — ${formatMoney(RESEARCH_COST)} 차감`);
+    toast(`${getById(DISTRICTS, districtId).shortName} 현장 메모 열기 — ${formatMoney(RESEARCH_COST)} 차감`);
     setView("wizard");
   });
   screen.querySelectorAll("[data-district]").forEach((button) => button.addEventListener("click", () => {
@@ -1123,15 +1118,11 @@ function renderBrief() {
       <div class="brief-grid">
         <div class="brief-main">
           ${isOpeningDay ? `
-            <section class="brief-card naming-card">
-              <span class="card-label">간판을 답니다</span>
-              <h2>가게 이름을 정하세요</h2>
+            <section class="brief-card naming-card is-compact">
+              <label class="card-label" for="cafe-name">가게 이름</label>
               <div class="name-field">
                 <span class="name-prefix" aria-hidden="true">▮</span>
-                <input id="cafe-name" type="text" maxlength="14" value="${escapeHtml(state.restaurantName)}" aria-label="카페 이름" autocomplete="off" />
-              </div>
-              <div class="name-suggestions">
-                ${["온도커피", "구름상점", "소금빵연구소", "슬로우드립", "밤과낮"].map((name) => `<button class="name-chip" data-name="${name}" type="button">${name}</button>`).join("")}
+                <input id="cafe-name" type="text" maxlength="14" value="${escapeHtml(state.restaurantName)}" autocomplete="off" />
               </div>
             </section>` : `
             <section class="brief-card recap-card">
@@ -1224,11 +1215,6 @@ function renderBrief() {
     nameInput.addEventListener("input", () => {
       state.restaurantName = nameInput.value.trim() || "온도커피";
     });
-    screen.querySelectorAll("[data-name]").forEach((button) => button.addEventListener("click", () => {
-      state.restaurantName = button.dataset.name;
-      nameInput.value = button.dataset.name;
-      sounds.click();
-    }));
   }
 
   screen.querySelectorAll("[data-hours]").forEach((button) => button.addEventListener("click", () => {

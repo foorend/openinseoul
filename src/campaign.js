@@ -15,8 +15,8 @@ import {
   MONTHS,
   SEASON_OVERRIDES,
   getById,
-} from "./data.js?release=20261015";
-import { RestaurantSimulation } from "./sim.js?release=20261015";
+} from "./data.js?release=20261015b";
+import { RestaurantSimulation } from "./sim.js?release=20261015b";
 
 export function monthInfo(monthNumber) {
   return MONTHS[(monthNumber - 1) % 12];
