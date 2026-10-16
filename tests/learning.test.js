@@ -32,6 +32,10 @@ test("anonymous learning results validate, deduplicate and separate knowledge fr
   assert.throws(() => classCode("user@example.com"));
   assert.throws(() => scoreQuiz([0, 1, 2], 0));
   assert.equal(validateLearning({ ...complete, pre: { ...pre, score: 999 } }).pre.score, 1);
+  const day = { month: 1, day: 1, decisions: ["12:30 점심 커피 러시가 터졌다 → 쿠키를 돌리며 양해를 구한다"], profitWon: -126409, ownerHours: 6 };
+  assert.deepEqual(validateLearning({ ...complete, decisions: [day] }).decisions, [day]);
+  assert.deepEqual(validateLearning(complete).decisions, []);
+  assert.throws(() => validateLearning({ ...complete, decisions: [{ ...day, decisions: ["x".repeat(81)] }] }));
   const csv = learningCsv([{ ...complete, classCode: "-CAFE" }]);
   assert(csv.startsWith("\uFEFF"));
   assert(csv.includes("netProfitManwon"));

@@ -1,9 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createOpeningPractice } from "../src/tutorial.js";
 import { experimentChoices, applyCondition, compareCondition, compareBudget, laborTradeoff } from "../src/experiment.js";
 import { buildCoach } from "../src/coach.js";
-import { FORMATS, MENUS, STAFFING_PLANS, OWNER_ROLES, SUPPLY_MODES } from "../src/data.js";
+import { DISTRICTS, FORMATS, MENUS, STAFFING_PLANS, OWNER_ROLES, SUPPLY_MODES } from "../src/data.js";
+import { RestaurantSimulation } from "../src/sim.js";
+
+// 고정 연습 상황: 1인 카페, 테이블 전부 더러움, 손님 없음, 시계 정지.
+function createOpeningPractice() {
+  const sim = new RestaurantSimulation({ seed: "OPENING-PRACTICE-1", district: DISTRICTS[2], format: FORMATS[0], menus: MENUS.slice(0, 2), cash: 5000, reputation: 68, awareness: 60, hygiene: 86 });
+  sim.startDay(1);
+  sim.arrivals = [];
+  sim.activeAgents = [];
+  sim.tables.forEach(table => { table.state = "dirty"; table.cleanAt = 0; table.dirtyAt = sim.gameMinute; });
+  sim.toggleOwnerWork(true);
+  sim.setOwnerAuto(false);
+  sim.setSpeed(0);
+  return sim;
+}
 
 test("opening practice creates a seat and serves a real order, counting labor", () => {
   const sim = createOpeningPractice();

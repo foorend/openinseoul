@@ -37,18 +37,16 @@ import {
   getById,
   PUBLIC_META,
   SEOUL_AVERAGE,
-} from "./data.js?release=20261015b";
-import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost } from "./sim.js?release=20261015b";
-import { GameScene, HeroScene } from "./scene.js?release=20261015b";
-import { mountIllustration } from "./visuals.js?release=20261015b";
-import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261015b";
-import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261015b";
-import { Tutorial } from "./tutorial.js?release=20261015b";
-import { ARCADE_BY_STATION, FlyerRun } from "./arcade.js?release=20261015b";
-import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261015b";
-import { publicRows, sourceLine, sourceMarkup, survivalFor } from "./sources.js?release=20261015b";
-import { buildCoach, narrateCoach } from "./coach.js?release=20261015b";
-import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261015b";
+} from "./data.js?release=20261016a";
+import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost, hourToClock } from "./sim.js?release=20261016a";
+import { GameScene, HeroScene } from "./scene.js?release=20261016a";
+import { mountIllustration } from "./visuals.js?release=20261016a";
+import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261016a";
+import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261016a";
+import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261016a";
+import { publicRows, sourceLine, sourceMarkup, survivalFor } from "./sources.js?release=20261016a";
+import { buildCoach, narrateCoach } from "./coach.js?release=20261016a";
+import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261016a";
 
 const screen = document.querySelector("#screen");
 const topbarStatus = document.querySelector("#topbar-status");
@@ -92,15 +90,13 @@ const state = {
   // 인사 기록 — 한 번이라도 해고를 겪으면 이후엔 권고사직 절차를 밟는다
   everFired: false,
   bakeryGearBought: false,
-  arcadeOpen: false,
-  pendingArcade: null,
   lastRemaining: null,
   loanUnits: 0,
   pageStart: null,
   quickSetup: true,
-  managementOnly: true,
   campaignMode: "chapters",
   learning: null,
+  dayDecisions: [],  // 오늘 내린 결정 — 빨리 감기 조건이자 교육 기록의 근거
 };
 
 let heroScene = null;
@@ -109,10 +105,10 @@ let illustrationDisposers = [];
 let operationRaf = null;
 let lastFrame = 0;
 let reportReadyNotified = false;
-const SESSION_FIELDS = ["view", "step", "selectedDistrictId", "districtId", "formatId", "menuIds", "beanTierId", "ownerRoleId", "supplyModeId", "hourPlanId", "businessTypeId", "campaign", "reports", "selectedActions", "tutorialShown", "staffingId", "restaurantName", "setupCash", "ownerLookId", "ownerHairId", "ownerStats", "capitalId", "equipmentId", "researchBought", "everFired", "bakeryGearBought", "loanUnits", "pendingExperiment", "quickSetup", "managementOnly", "campaignMode", "learning"];
+const SESSION_FIELDS = ["view", "step", "selectedDistrictId", "districtId", "formatId", "menuIds", "beanTierId", "ownerRoleId", "supplyModeId", "hourPlanId", "businessTypeId", "campaign", "reports", "selectedActions", "tutorialShown", "staffingId", "restaurantName", "setupCash", "ownerLookId", "ownerHairId", "ownerStats", "capitalId", "equipmentId", "researchBought", "everFired", "bakeryGearBought", "loanUnits", "pendingExperiment", "quickSetup", "campaignMode", "learning", "dayDecisions"];
 
 function saveProgress() {
-  if (state.view === "landing" || state.arcadeOpen || state.tutorial) return false;
+  if (state.view === "landing") return false;
   const saved = { version: DATA_VERSION, at: Date.now(), state: Object.fromEntries(SESSION_FIELDS.map((key) => [key, state[key]])), simulation: state.simulation?.exportState() ?? null };
   recordLearning();
   return platform.saveSession(saved);
@@ -126,8 +122,6 @@ function restoreProgress() {
     if (saved.state.view !== "wizard" && !simulation) throw new Error("영업 기록이 없습니다");
     for (const key of SESSION_FIELDS) if (Object.hasOwn(saved.state, key)) state[key] = saved.state[key];
     state.simulation = simulation;
-    state.arcadeOpen = false;
-    state.pendingArcade = null;
     state.tutorialShown = !!simulation || state.tutorialShown;
     simulation?.setSpeed(0);
     setView(state.view);
@@ -138,7 +132,7 @@ function restoreProgress() {
 const saveButton = document.createElement("button");
 saveButton.className = "icon-button";
 saveButton.textContent = "저장";
-saveButton.addEventListener("click", () => toast(saveProgress() ? "진행을 저장했습니다" : "저장하지 못했습니다. 미니게임·안내를 끝내거나 저장 공간을 확인하세요."));
+saveButton.addEventListener("click", () => toast(saveProgress() ? "진행을 저장했습니다" : "저장하지 못했습니다. 브라우저 저장 공간을 확인하세요."));
 document.querySelector(".topbar-actions").prepend(saveButton);
 setInterval(() => saveProgress(), 5000);
 window.addEventListener("pagehide", () => saveProgress());
@@ -262,9 +256,9 @@ function resetGame() {
     pendingExperiment: null,
     lastSpendLines: null,
     quickSetup: true,
-    managementOnly: true,
     campaignMode: "chapters",
     tutorialShown: false,
+    dayDecisions: [],
   });
   render();
 }
@@ -272,9 +266,6 @@ function resetGame() {
 // ── 한 화면 맞춤 ─────────────────────────────────────────────
 // 내용이 뷰포트를 넘치면 화면 전체를 조금 줄여 스크롤 없이 다 보이게 한다.
 // 가독성이 최우선 — 화면마다 줄여도 되는 하한을 따로 둔다.
-// 리포트류: 글씨가 우선, 스크롤 허용(최대 6%만 축소).
-// 창업준비/브리핑: 다음 버튼이 늘 보여야 하므로 한 화면에 담되 덜 줄인다(최대 18%).
-// 운영(미니게임): 조작을 위해 한 화면(최대 22%).
 function fitScreenToViewport() {
   // 글씨를 축소하지 않는다. 작은 화면에서는 자연스럽게 스크롤한다.
   screen.style.zoom = "";
@@ -293,7 +284,7 @@ function render() {
   else if (state.view === "monthPlan") renderImprovements();
   else if (state.view === "final") renderYearEnd();
   if (["report", "monthClose", "final"].includes(state.view)) compactReport();
-  if (state.learning && state.view !== "landing") screen.querySelector(state.view === "operations" ? ".ops-rail" : "section")?.insertAdjacentHTML("afterbegin", `<div class="source-strip">익명 수업 ${escapeHtml(state.learning.classCode)} · 공통 자본 1억 5천만원 · ${state.learning.goal === "hours" ? "사장 노동시간 비교" : "현금과 손익 구분"} <button class="text-button learning-open" type="button">교육 결과 저장</button></div>`);
+  if (state.learning && state.view !== "landing") screen.querySelector(state.view === "operations" ? ".ledger-card" : "section")?.insertAdjacentHTML("afterbegin", `<div class="source-strip">익명 수업 ${escapeHtml(state.learning.classCode)} · 공통 자본 1억 5천만원 · ${state.learning.goal === "hours" ? "사장 노동시간 비교" : "현금과 손익 구분"} <button class="text-button learning-open" type="button">교육 결과 저장</button></div>`);
   // 화면 아래 출처 바: 지금 화면의 숫자가 어느 공공데이터·가정에서 왔는지 계속 보여 준다.
   const barDistrictId = state.simulation?.district?.id ?? state.districtId ?? state.selectedDistrictId;
   if (sourceBar) sourceBar.innerHTML = sourceLine({ view: state.view, stepId: state.view === "wizard" ? activeSteps()[state.step]?.id : null, district: barDistrictId ? getById(DISTRICTS, barDistrictId) : null });
@@ -1244,7 +1235,10 @@ function renderBrief() {
     applySeasonDemand();
     if (!state.campaign.weekdayReport && !state.campaign.weekendReport) state.campaign.experimentBase = sim.exportState();
     sim.startDay(day);
-    if (state.managementOnly) { sim.toggleOwnerWork(true); sim.setOwnerAuto(true); }
+    // 사장은 출근한 채, 자동 배치로 문을 연다. 플레이어는 지켜보다가 자리를 바꾼다.
+    sim.toggleOwnerWork(true);
+    sim.setOwnerAuto(true);
+    state.dayDecisions = [];
     sounds.bell();
     // 튜토리얼이 뜰 차례라면 시계를 켜지 않는다. setView가 동기라 플래그를 먼저 읽어둔다.
     const willTutorial = !state.tutorialShown;
@@ -1252,233 +1246,109 @@ function renderBrief() {
     if (!willTutorial) {
       state.simulation.setSpeed(1);
       state.lastSpeed = 1;
-      document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 1));
     }
   });
 }
 
-// 지금 얼마나 붐비는가 — 페이즈(피크)와 달(성수기)이 미니게임의 밀도를 정한다.
-function crowdInfoFor(sim) {
-  const phase = sim.currentPhase();
-  const season = sim.demandFactor ?? 1;
-  const factor = (phase.busy ? 1.6 : 1) * (season >= 1.12 ? 1.3 : season >= 0.95 ? 1 : 0.85);
-  const info = monthInfo(state.campaign?.month ?? 1);
-  let label = null;
-  if (phase.busy && season >= 1.12) label = `🔥 ${phase.korean} × ${info.name} 성수기 — 거리가 터져나갑니다`;
-  else if (phase.busy) label = `🔥 ${phase.korean} — 사람이 몰리는 시간대`;
-  else if (season >= 1.12) label = `🌸 ${info.name} 성수기 — 평소보다 붐빕니다`;
-  else if (season <= 0.88) label = `🍂 ${info.name} 비수기 — 거리가 한산합니다`;
-  return { factor, label };
-}
-
-// 미니게임은 클릭 또는 1·2·3 키로만 열린다 — 자동 배치는 절대 열지 않는다.
-// 왼쪽 미니게임 자리에 열리고, 그동안 카페 씬과 크기를 맞바꾼다.
-function launchArcade(stationId) {
-  const sim = state.simulation;
-  if (!sim || state.arcadeOpen || sim.finished) return;
-  if (document.querySelector("dialog[open]") || sim.activeDilemma) return;
-  const GameClass = ARCADE_BY_STATION[stationId];
-  if (!GameClass) return;
-  state.arcadeOpen = true;
-  sim.setSpeed(1);
-  const dock = document.querySelector("#arcade-dock");
-  const home = document.querySelector("#arcade-home");
-  if (home) home.hidden = true;
-  document.querySelector(".ops-grid")?.classList.add("arcade-live");
-  const game = new GameClass({
-    sim, sounds,
-    crowd: crowdInfoFor(sim),
-    mount: dock ?? undefined,
-    onEnd: (stats) => {
-      state.arcadeOpen = false;
-      state.activeArcade = null;
-      document.querySelector(".ops-grid")?.classList.remove("arcade-live");
-      const homeAfter = document.querySelector("#arcade-home");
-      if (homeAfter) homeAfter.hidden = false;
-      if (stationId === "door") toast(`전단지 영업 끝 — ${stats.score ?? 0}점, 손님 ${stats.converted ?? 0}명 확보`);
-      else if (stationId === "bar") toast(`키친 러시 끝 — ${stats.made ?? 0}잔을 직접 만들었습니다`);
-      else toast(`홀 서빙 끝 — ${stats.handled ?? 0}건 처리`);
-    },
-  });
-  state.activeArcade = game;
-  game.start();
-}
-
+// 영업 화면 — 매장 장면 + 오늘 장부 + 사장 조작 한 줄.
+// 숫자는 끝나고 읽는 표가 아니라, 영업하는 동안 장면 위로 뜨고 장부에서 움직인다.
 function renderOperations() {
   const sim = state.simulation;
   const snapshot = sim.snapshot();
-  topbarStatus.innerHTML = statusMarkup(`${monthInfo(state.campaign?.month ?? 1).name} ${snapshot.day >= 6 ? "주말" : "평일"} · ${snapshot.clock}`);
+  const dongs = sim.district.public?.dongs ?? [];
+  const rentBadge = dongs.length ? `${dongs[0]}${dongs.length > 1 ? " 외" : ""} 실측` : "공공데이터";
+  topbarStatus.innerHTML = statusMarkup(dayStatus(snapshot));
   reportReadyNotified = false;
   lastPhaseId = snapshot.phase.id;
   ownerWasOnDuty = snapshot.onDuty;
+  lastTickerEntry = null;
+  breakevenNotified = sim.ledger().profit >= 0;
+  openingCostsShown = sim.gameMinute > sim.openHour * 60;
   screen.innerHTML = `
     <section class="operations-screen enter-up">
-      <div class="chapter-strip"><span>${chapterLabel(state.campaign.month)}</span><b>${state.campaignMode === "chapters" ? "3챕터 체험" : "12개월 경영"} · ${state.campaign.month}/12월</b></div>
-      <section class="decision-board"><details class="decision-context"><summary><span id="bottleneck-title">첫 손님을 기다리는 중</span> · 대응 보기</summary><p id="bottleneck-detail">자동 배치가 기본입니다. 직접 자리를 바꿔도 미니게임은 열리지 않습니다.</p><button class="secondary-button" id="bottleneck-action" type="button">입구에 배치</button></details><div class="decision-kpis"><span>현금 <b id="board-cash">${formatMoney(snapshot.cash)}</b></span><span>매출 <b id="board-sales">0만원</b></span><span>내 노동 <b id="board-hours">0.0시간</b></span></div></section>
-      <div class="ops-grid ${state.managementOnly ? "management-mode" : ""}">
-      <div class="interior-column" id="arcade-column">
-        <div class="interior-head"><span class="meta-label">MINIGAME</span><strong>사장의 자리 — 여기서 뜁니다</strong></div>
-        <div class="interior-panel arcade-dock" id="arcade-dock">
-          <div class="arcade-home" id="arcade-home">
-            <p class="arcade-home-lede">키보드 미니게임은 <b>선택 사항</b>입니다. 아래 버튼으로만 시작합니다. 터치 경영만으로도 끝까지 플레이할 수 있습니다.</p>
-            <button class="arcade-home-card" data-arcade="bar" type="button">
-              <span class="ah-key">1</span><span class="ah-icon" aria-hidden="true">☕</span>
-              <span class="ah-body"><b>${snapshot.stationNames?.bar ?? "키친"} — 키친 러시</b><span>←→ 이동 · 키를 <i>꾹</i> 눌러 추출/굽기, 노란 구간에서 떼기</span></span>
-            </button>
-            <button class="arcade-home-card" data-arcade="hall" type="button">
-              <span class="ah-key">2</span><span class="ah-icon" aria-hidden="true">🍽</span>
-              <span class="ah-body"><b>${snapshot.stationNames?.hall ?? "홀"} — 홀 서빙</b><span>←→ 이동 · 말풍선 키 <i>Q/W/E/R</i> + <i>SPACE×2</i></span></span>
-            </button>
-            <button class="arcade-home-card" data-arcade="door" type="button">
-              <span class="ah-key">3</span><span class="ah-icon" aria-hidden="true">📄</span>
-              <span class="ah-body"><b>${snapshot.stationNames?.door ?? "입구"} — 전단지 돌리기</b><span>방향키 ↑↓←→ · 행인은 잡고, 진상은 피하고</span></span>
-            </button>
-            <p class="arcade-home-note">성과는 그대로 오늘 매출·만족도에 반영됩니다. 피크 시간대·성수기 달엔 훨씬 정신없어요.</p>
+      <div class="ops-layout">
+        <div class="scene-panel">
+          <canvas id="game-canvas" aria-label="${escapeHtml(sim.district.name)}의 낮과 밤, 매장 내부와 움직이는 고객을 보여주는 실시간 영업 장면"></canvas>
+          <div class="phase-banner" id="phase-banner" hidden><span id="phase-banner-label"></span><strong id="phase-banner-title"></strong></div>
+          <div class="agent-popover" id="agent-popover" hidden></div>
+          <div class="scene-hud">
+            <div class="hud-top"><div class="day-clock"><span class="phase-label" id="phase-label">${snapshot.phase.korean}</span><strong id="clock-value">${snapshot.clock}</strong><div class="day-progress"><i id="day-progress" style="width:${snapshot.progress * 100}%"></i></div></div><div class="weather-chip" id="weather-value">${snapshot.weather.icon} ${snapshot.weather.name}</div></div>
+            <p class="ticker" id="ticker" aria-live="polite"></p>
           </div>
+          <dialog class="dilemma-overlay" id="dilemma-overlay" aria-label="돌발 상황 · 시간 정지" hidden></dialog>
         </div>
-        <p class="interior-hint">미니게임이 시작되면 이 자리가 커지고, 카페는 옆에서 계속 돌아갑니다 — 시간도 흐릅니다</p>
+        <aside class="ledger-card" id="ledger" aria-label="오늘 장부">
+          <div class="ledger-head"><span class="meta-label">오늘 장부</span><small>${escapeHtml(state.restaurantName)} · ${sim.format.name}</small></div>
+          <dl class="ledger-lines">
+            <div class="is-revenue"><dt>매출</dt><dd id="lg-revenue">₩0</dd></div>
+            <div><dt>인건비 <i class="data-badge">시급 ₩${sim.district.hourlyWage.toLocaleString("ko-KR")}</i></dt><dd id="lg-labor"></dd></div>
+            <div><dt>월세 <i class="data-badge">${escapeHtml(rentBadge)}</i></dt><dd id="lg-rent"></dd></div>
+            <div><dt>재료·수수료</dt><dd id="lg-goods"></dd></div>
+            <div><dt>기타 <small>부가세 적립·공과금·운영</small></dt><dd id="lg-other"></dd></div>
+            <div class="is-profit"><dt>이익</dt><dd id="lg-profit"></dd></div>
+          </dl>
+          <div class="breakeven" title="매출에서 재료·세금을 빼고 남은 돈이 오늘 월세·인건비를 얼마나 덮었는지"><div class="breakeven-track"><i id="lg-breakeven"></i></div><span id="lg-breakeven-label"></span></div>
+          <p class="ledger-wage"><span>오늘 내 시급</span><b id="lg-wage">—</b><small id="lg-hours"></small></p>
+          <p class="ledger-guests" id="lg-guests"></p>
+        </aside>
       </div>
-      <div class="scene-panel">
-        <canvas id="game-canvas" aria-label="${escapeHtml(sim.district.name)}의 낮과 밤, 매장 내부와 움직이는 고객을 보여주는 실시간 영업 장면"></canvas>
-        <div class="phase-banner" id="phase-banner" hidden><span id="phase-banner-label"></span><strong id="phase-banner-title"></strong></div>
-        <div class="agent-popover" id="agent-popover" hidden></div>
-        <div class="scene-hud">
-          <div class="hud-top"><div class="day-clock"><span class="phase-label" id="phase-label">${snapshot.phase.label}</span><strong id="clock-value">${snapshot.clock}</strong><div class="day-progress"><i id="day-progress" style="width:${snapshot.progress * 100}%"></i></div></div><div class="weather-chip" id="weather-value">${snapshot.weather.icon} ${snapshot.weather.name}</div></div>
-          <div class="hud-bottom">
-            <div class="control-dock" role="group" aria-label="영업 속도">
-              <button class="speed-button" data-speed="0" type="button">Ⅱ</button><button class="speed-button active" data-speed="1" type="button">1×</button><button class="speed-button" data-speed="2" type="button">2×</button><button class="speed-button" data-speed="4" type="button">4×</button>
-            </div>
-            <div class="station-dock" id="station-dock" role="group" aria-label="사장의 자리">
-              ${["bar", "hall", "door"].map((id, index) => `<button class="station-button" data-station="${id}" type="button"><span class="station-name">${snapshot.stationNames[id]} 배치</span><span class="station-key">${index + 1}</span></button>`).join("")}
-              <button class="work-toggle" id="work-toggle" type="button" title="스페이스 바로도 됩니다">
-                <span class="work-gauge"><i id="work-fill"></i></span>
-                <span class="stress-gauge" title="사장 스트레스"><i id="stress-fill"></i></span>
-                <span class="work-label" id="work-label">출근</span>
-                <span class="work-left" id="work-left">—</span>
-                <span class="work-key" aria-hidden="true">SPACE</span>
-              </button>
-              <button class="station-button station-auto" id="station-auto" type="button" title="사장이 병목을 보고 알아서 움직입니다">
-                <span class="station-icon" aria-hidden="true">🤖</span>
-                <span class="station-name">자동</span>
-                <span class="station-key">0</span>
-              </button>
-              <button class="station-button station-skip" id="skip-day" type="button" title="남은 하루를 즉시 계산하고 마감 리포트로 직행합니다">
-                <span class="station-icon" aria-hidden="true">⏭</span>
-                <span class="station-name">자동 마감</span>
-                <span class="station-key">리포트</span>
-              </button>
-            </div>
-            <div class="live-kpis"><div class="live-kpi"><span class="metric-label">CASH</span><strong id="hud-cash">${formatMoney(snapshot.cash, true)}</strong></div><div class="live-kpi"><span class="metric-label">SALES</span><strong id="hud-sales">${formatMoney(snapshot.metrics.revenue, true)}</strong></div></div>
-          </div>
+      <nav class="owner-bar" aria-label="영업 조작">
+        <div class="control-dock" role="group" aria-label="영업 속도">
+          <button class="speed-button" data-speed="0" type="button" aria-label="일시정지">Ⅱ</button><button class="speed-button" data-speed="1" type="button">1×</button><button class="speed-button" data-speed="4" type="button">4×</button><button class="speed-button" data-speed="8" id="fast-forward" type="button" aria-label="빨리 감기 8배속" title="빨리 감기 — 오늘 결정을 하나 내리면 열립니다">8×</button>
         </div>
-        <dialog class="dilemma-overlay" id="dilemma-overlay" aria-label="돌발 상황 · 시간 정지" hidden></dialog>
-      </div>
-      <aside class="ops-rail">
-        <section class="rail-card"><h2>직접 관리</h2><p class="rail-description">자리에 도착한 뒤 실행하세요. 모든 조작은 클릭·터치로 됩니다.</p><div class="management-tools"><button class="secondary-button" data-task="cleanMachine" type="button">키친 · 머신 청소</button><button class="secondary-button" data-task="restockCase" type="button">키친 · 재고 보충</button><button class="secondary-button" data-task="table" type="button">홀 · 빈 테이블 정리</button><button class="secondary-button" data-task="service" type="button">홀 · 손님 요청 응대</button></div><button class="text-button" id="toggle-arcade" type="button">${state.managementOnly ? "선택 미니게임 펼치기 (키보드)" : "미니게임 접고 경영에 집중"}</button></section>
-        <section class="rail-card"><span class="meta-label">LIVE OPERATIONS</span><h2>${escapeHtml(state.restaurantName)} / ${sim.format.name}</h2><div class="operation-meters">
-          <div class="meter-line"><span class="metric-label">주방 부하</span><div class="meter-bar"><i id="meter-kitchen" style="width:0%"></i></div><strong id="value-kitchen">0%</strong></div>
-          ${sim.format.seats > 0 ? `<div class="meter-line"><span class="metric-label">홀 정리</span><div class="meter-bar"><i id="meter-hall" style="width:0%"></i></div><strong id="value-hall">0</strong></div>` : ""}
-          <div class="meter-line"><span class="metric-label">평판</span><div class="meter-bar"><i id="meter-reputation" style="width:${snapshot.reputation}%"></i></div><strong id="value-reputation">${Math.round(snapshot.reputation)}</strong></div>
-          <div class="meter-line"><span class="metric-label">청결</span><div class="meter-bar"><i id="meter-hygiene" style="width:${snapshot.hygiene}%"></i></div><strong id="value-hygiene">${Math.round(snapshot.hygiene)}</strong></div>
-        </div></section>
-        <section class="rail-card"><span class="meta-label">CUSTOMER FUNNEL</span><div class="live-funnel">
-          <div><strong id="funnel-footfall">0</strong><span>유동·검색</span></div><div><strong id="funnel-entered">0</strong><span>입장</span></div><div><strong id="funnel-served">0</strong><span>제공</span></div><div><strong id="funnel-satisfied">0</strong><span>만족</span></div>
-        </div></section>
-        <details class="rail-card event-feed"><summary>손님 피드백 · 행동 로그</summary><div class="feed-list" id="feed-list"><div class="feed-item"><time>${snapshot.clock}</time><span>영업이 시작됐습니다. 손님을 클릭하면 속마음이 보입니다.</span></div></div></details>
-        <button class="text-button notebook-button" id="open-notebook" type="button">장사 노트 열기</button>
-        <button class="end-day-button" id="open-report" type="button" disabled>영업 중 · ${sim.hourPlan.close}:00 마감</button>
-      </aside>
-    </div></section>`;
+        <div class="station-dock" id="station-dock" role="group" aria-label="사장의 자리">
+          ${OWNER_STATIONS.map((station) => `<button class="station-button" data-station="${station.id}" type="button" title="${station.short} · 키 ${station.key}"><span class="station-icon" aria-hidden="true">${station.icon}</span><span class="station-name">${snapshot.stationNames[station.id]}</span></button>`).join("")}
+          <button class="work-toggle" id="work-toggle" type="button" title="스페이스 바"><span class="work-gauge"><i id="work-fill"></i></span><span class="stress-gauge" title="사장 스트레스"><i id="stress-fill"></i></span><span class="work-label" id="work-label">쉬기</span><span class="work-left" id="work-left">—</span></button>
+          <button class="station-button station-auto" id="station-auto" type="button" title="사장이 병목을 보고 스스로 자리를 옮깁니다 · 키 0"><span class="station-icon" aria-hidden="true">🤖</span><span class="station-name">자동</span></button>
+        </div>
+      </nav>
+    </section>`;
 
-  const controls = document.createElement("nav");
-  controls.className = "operation-controls";
-  controls.setAttribute("aria-label", "영업 조작");
-  controls.append(screen.querySelector(".hud-bottom"));
-  screen.querySelector(".ops-grid").before(controls);
-  controls.before(screen.querySelector("#dilemma-overlay"));
-  const tabs = document.createElement("div");
-  tabs.className = "operation-tabs";
-  tabs.innerHTML = '<button class="secondary-button" aria-pressed="true" data-panel="scene">매장 보기</button><button class="secondary-button" aria-pressed="false" data-panel="management">관리·기록</button>';
-  controls.before(tabs);
-  tabs.querySelectorAll("button").forEach(button => button.onclick = () => {
-    screen.querySelector(".operations-screen").dataset.panel = button.dataset.panel;
-    tabs.querySelectorAll("button").forEach(item => item.setAttribute("aria-pressed", String(item === button)));
-  });
-  const replay = document.createElement("button");
-  replay.className = "text-button";
-  replay.textContent = "첫손님 연습 다시 하기";
-  replay.onclick = () => { state.tutorialShown = false; setView("operations"); };
-  screen.querySelector(".management-tools").after(replay);
-  document.querySelector("[data-speed='0']").setAttribute("aria-label", "일시정지");
-  document.querySelector("#toggle-arcade").addEventListener("click", () => { state.managementOnly = !state.managementOnly; setView("operations"); });
-  document.querySelector("#bottleneck-action").addEventListener("click", (event) => screen.querySelector(`[data-station="${event.currentTarget.dataset.station ?? "door"}"]`)?.click());
-  screen.querySelectorAll("[data-task]").forEach((button) => button.addEventListener("click", () => {
-    if (state.arcadeOpen || sim.activeDilemma) return;
-    const task = button.dataset.task;
-    let result;
-    if (task === "table") { const table = sim.tables.find((item) => item.state === "dirty"); result = table ? sim.ownerClean(table.id) : { ok: false, reason: "치울 테이블이 없습니다" }; }
-    else if (task === "service") { const agent = sim.activeAgents.find((item) => item.serviceRequested && !item.serviceResolved); result = agent ? sim.attendCustomer(agent.id) : { ok: false, reason: "응대 요청이 없습니다" }; }
-    else result = sim[task]();
-    toast(result.label ?? result.reason);
-  }));
-  screen.querySelectorAll("[data-arcade]").forEach((button) => button.addEventListener("click", () => {
-    const station = button.dataset.arcade;
-    if (sim.atStation(station) && !sim.finished && !sim.activeDilemma) { sim.setOwnerAuto(false); launchArcade(station); return; }
-    const result = sim.moveOwner(station);
-    if (result.ok) state.pendingArcade = station;
-    else toast(result.reason);
-  }));
-
-  document.querySelectorAll("[data-speed]").forEach((button) => button.addEventListener("click", () => {
+  const overtimeOk = () => window.confirm("정한 근무시간을 다 썼습니다. 초과 근무하면 스트레스가 쌓이고, 이 시간도 사장 노동으로 셉니다. 다시 나갈까요?");
+  screen.querySelectorAll("[data-speed]").forEach((button) => button.addEventListener("click", () => {
+    if (sim.activeDilemma || sim.finished) return;
     const speed = Number(button.dataset.speed);
-    if (sim.activeDilemma) return;
+    // 결정 없이 하루를 날리지 못하게 한다 — 빨리 감기는 무언가를 정한 뒤에 열린다.
+    if (speed === 8 && !state.dayDecisions.length) { sounds.bad(); toast("오늘 결정을 하나 내리면 빨리 감을 수 있습니다 — 사장 자리·쉬기·자동 중 하나를 눌러 보세요."); return; }
     sim.setSpeed(speed);
     if (speed > 0) state.lastSpeed = speed;
     sounds.click();
-    document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === speed));
   }));
-  // 자동 = "내 선택의 성적표를 빨리 본다": 출근시키고, 4배속으로 하루를 자동 진행해
-  // 마감 리포트로 직행한다. 미니게임은 자동에서는 절대 열리지 않는다.
+  screen.querySelectorAll("[data-station]").forEach((button) => button.addEventListener("click", () => {
+    const stationId = button.dataset.station;
+    // 쉬는 중이면 자리를 누르는 것이 곧 출근이다.
+    if (!sim.ownerWorking) {
+      if (sim.ownerBudgetLeft <= 0 && !overtimeOk()) return;
+      const clockIn = sim.toggleOwnerWork(true);
+      if (!clockIn.ok) { sounds.bad(); toast(clockIn.reason); return; }
+    }
+    const result = sim.moveOwner(stationId);
+    if (!result.ok) { sounds.bad(); toast(result.reason); return; }
+    sounds.good();
+    noteDecision(`${sim.stationName(stationId)}에 섬`);
+    const spot = gameScene?.ownerSpot;
+    if (spot) gameScene.addFloater(spot.x, spot.y - 110, result.label, "good");
+  }));
+  document.querySelector("#work-toggle").addEventListener("click", () => {
+    const resting = !sim.ownerWorking;
+    if (resting && sim.ownerBudgetLeft <= 0 && !overtimeOk()) return;
+    const result = sim.toggleOwnerWork(resting);
+    if (!result.ok) { sounds.bad(); toast(result.reason); return; }
+    sounds.good();
+    noteDecision(resting ? "사장 복귀" : "사장 휴식");
+  });
   document.querySelector("#station-auto").addEventListener("click", () => {
-    const sim2 = state.simulation;
-    const result = sim2.setOwnerAuto(!sim2.autoOwner);
+    const on = !sim.autoOwner;
+    if (on && !sim.ownerWorking && sim.ownerBudgetLeft > 0) sim.toggleOwnerWork(true);
+    sim.setOwnerAuto(on);
     sounds.click();
-    if (result.auto) {
-      state.pendingArcade = null;
-      if (!sim2.ownerWorking) sim2.toggleOwnerWork();
-      sim2.setSpeed(4);
-      state.lastSpeed = 4;
-      document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 4));
-      toast("자동 진행 — 4배속으로 하루를 돌려 마감 리포트를 보러 갑니다. 미니게임은 열리지 않습니다.");
-    } else {
-      sim2.setSpeed(1);
-      state.lastSpeed = 1;
-      document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 1));
-      toast("수동 배치 — 자리를 직접 정하세요. 미니게임은 별도 버튼으로 선택할 때만 열립니다.");
-    }
+    noteDecision(on ? "자동 배치 켬" : "자동 배치 끔");
+    toast(on ? "자동 배치 — 줄이 길면 키친, 테이블이 밀리면 홀, 한가하면 입구로 갑니다." : "수동 배치 — 사장 자리를 직접 정하세요.");
   });
-  // 스킵 = 기다림도 생략: 남은 하루를 즉시 계산하고 마감 리포트로 직행한다.
-  // 계산 도중 돌발 상황이 떠서 시간이 멈추면 기본 선택으로 정리하고 끝까지 간다.
-  document.querySelector("#skip-day").addEventListener("click", () => {
-    if (state.arcadeOpen) { toast("미니게임을 끝내거나 그만둔 뒤에 스킵할 수 있습니다."); return; }
-    const sim2 = state.simulation;
-    for (let guard = 0; guard < 8 && !sim2.finished; guard += 1) {
-      if (sim2.activeDilemma) {
-        const fallback = sim2.activeDilemma.options.find((option) => option.default) ?? sim2.activeDilemma.options.at(-1);
-        sim2.resolveDilemma(fallback.id);
-      }
-      sim2.runToEnd();
-    }
-    if (!sim2.finished || !sim2.lastReport) { toast("마감 계산이 끝나지 않았습니다. 다시 시도해 주세요."); return; }
-    state.reports.push(sim2.lastReport);
-    sounds.bell();
-    toast("남은 하루를 스킵했습니다 — 바로 마감 리포트입니다.");
-    setView("report");
-  });
-  // 스페이스 바로 출근/쉬기 — 손이 제일 빠른 키에 제일 자주 쓰는 동작을 둔다
+  // 스페이스 바로 쉬기/복귀 — 손이 제일 빠른 키에 제일 자주 쓰는 동작을 둔다
   const spaceHandler = (event) => {
     if (event.code !== "Space") return;
-    if (state.view !== "operations" || state.arcadeOpen || document.querySelector("dialog[open]")) return;
+    if (state.view !== "operations" || document.querySelector("dialog[open]")) return;
     if (event.target instanceof Element && event.target.closest("input, textarea, [contenteditable]")) return;
     event.preventDefault();
     document.querySelector("#work-toggle")?.click();
@@ -1486,38 +1356,6 @@ function renderOperations() {
   window.removeEventListener("keydown", state.spaceHandler ?? (() => {}));
   state.spaceHandler = spaceHandler;
   window.addEventListener("keydown", spaceHandler);
-  document.querySelector("#work-toggle").addEventListener("click", () => {
-    const result = sim.toggleOwnerWork();
-    if (result.ok) {
-      sounds.good();
-      toast(result.working ? "사장이 매장에 들어왔습니다." : "사장이 쉽니다. 남은 시간은 아껴둡니다.");
-    } else {
-      sounds.bad();
-      toast(result.reason);
-    }
-  });
-  screen.querySelectorAll("[data-station]").forEach((button) => button.addEventListener("click", () => {
-    const stationId = button.dataset.station;
-    const result = sim.moveOwner(stationId);
-    if (result.ok) {
-      state.pendingArcade = null;
-      sounds.good();
-      gameScene?.addFloater(gameScene.ownerSpot?.x ?? 600, (gameScene.ownerSpot?.y ?? 600) - 100, result.label, "good");
-    } else {
-      sounds.bad();
-      toast(result.reason);
-    }
-  }));
-  document.querySelector("#open-notebook").addEventListener("click", () => {
-    sounds.click();
-    openNotebook();
-  });
-  document.querySelector("#open-report").addEventListener("click", () => {
-    if (!sim.finished) return;
-    state.reports.push(sim.lastReport);
-    sounds.bell();
-    setView("report");
-  });
   const canvas = document.querySelector("#game-canvas");
   canvas.addEventListener("click", (event) => {
     const rect = canvas.getBoundingClientRect();
@@ -1528,45 +1366,29 @@ function renderOperations() {
       showAgentPopover(null, cssX, cssY);
       return;
     }
-    // 직접 개입: 테이블 치우기 · 전단지 · 음료 서비스
-    // 씬을 눌러도 사장을 보낼 수 있다 — 도크와 같은 동작
+    // 사장의 손: 테이블 치우기 · 전단지 · 음료 서비스 · 응대. 씬을 눌러도 사장을 보낼 수 있다.
+    const act = (result, x, y, verb) => {
+      gameScene.addFloater(x, y, result.ok ? result.label : result.reason, result.ok ? result.tone ?? "good" : "bad");
+      if (result.ok) { sounds.good(); noteDecision(verb); } else sounds.bad();
+    };
     if (found.kind === "table" && !sim.atStation("hall")) {
       const move = sim.moveOwner("hall");
       if (move.ok) {
         sounds.good();
+        noteDecision("홀에 섬");
         gameScene.addFloater(found.x, found.y - 44, "사장이 홀로 갑니다", "good");
         return;
       }
     }
     if (found.kind === "table") {
-      if (found.cleaning) {
-        gameScene.addFloater(found.x, found.y - 44, "이미 정리 중입니다", "neutral");
-        return;
-      }
-      const result = sim.ownerClean(found.id);
-      gameScene.addFloater(found.x, found.y - 44, result.ok ? "사장이 치우러 갑니다" : result.reason, result.ok ? "good" : "bad");
-      if (result.ok) sounds.good(); else sounds.bad();
+      if (found.cleaning) { gameScene.addFloater(found.x, found.y - 44, "이미 정리 중입니다", "neutral"); return; }
+      act(sim.ownerClean(found.id), found.x, found.y - 44, "테이블 직접 치움");
       return;
     }
     const agent = found.agent;
-    if (agent.state === "walking" && agent.channel !== "delivery" && !agent.flyered) {
-      const result = sim.handFlyer(agent.id);
-      gameScene.addFloater(found.x, found.y - 34, result.ok ? result.label : result.reason, result.ok ? result.tone : "bad");
-      if (result.ok) sounds.click(); else sounds.bad();
-      return;
-    }
-    if (agent.serviceRequested && !agent.serviceResolved) {
-      const result = sim.attendCustomer(agent.id);
-      gameScene.addFloater(found.x, found.y - 34, result.ok ? result.label : result.reason, result.ok ? "good" : "bad");
-      if (result.ok) sounds.good(); else sounds.bad();
-      return;
-    }
-    if (agent.state === "queueing" && agent.channel !== "delivery" && !agent.drinkServed) {
-      const result = sim.serveDrink(agent.id);
-      gameScene.addFloater(found.x, found.y - 34, result.ok ? result.label : result.reason, result.ok ? "good" : "bad");
-      if (result.ok) sounds.good(); else sounds.bad();
-      return;
-    }
+    if (agent.state === "walking" && agent.channel !== "delivery" && !agent.flyered) { act(sim.handFlyer(agent.id), found.x, found.y - 34, "행인에게 전단지"); return; }
+    if (agent.serviceRequested && !agent.serviceResolved) { act(sim.attendCustomer(agent.id), found.x, found.y - 34, "손님 응대"); return; }
+    if (agent.state === "queueing" && agent.channel !== "delivery" && !agent.drinkServed) { act(sim.serveDrink(agent.id), found.x, found.y - 34, "대기 손님에게 음료"); return; }
     showAgentPopover(found, cssX, cssY);
   });
   sim.onDilemma((dilemma) => {
@@ -1578,28 +1400,73 @@ function renderOperations() {
   beginOperationLoop();
   if (sim.activeDilemma) showDilemma(sim.activeDilemma);
 
-  // 첫 영업일에는 튜토리얼을 먼저 돌린다. 그동안 시계는 멈춰 있다.
+  // 첫 영업일에는 실제 화면의 세 곳을 짚어 준다. 그동안 시계는 멈춰 있다.
   if (!state.tutorialShown) {
     state.tutorialShown = true;
     sim.setSpeed(0);
-    document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 0));
     saveProgress();
-    const tutorial = new Tutorial({
-      Scene: GameScene,
-      // 안내 문구가 실제 버튼에 적힌 자리 이름을 그대로 쓰게 한다.
-      stationNames: sim.snapshot().stationNames,
-      onFinish: ({ skipped }) => {
-        state.tutorial = null;
-        platform.logEvent("tutorial_finished", { skipped });
-        toast(skipped ? "연습을 건너뛰었습니다. 관리 화면에서 다시 할 수 있어요." : "이제 내 가게입니다. 오늘 남긴 돈과 내 노동을 마감에서 함께 확인하세요.");
-        sim.setSpeed(1);
-        state.lastSpeed = 1;
-        document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 1));
-      },
+    runCoachmarks([
+      ["#ledger", "오늘 장부", `문을 열자마자 월세·인건비 ${formatMoney(sim.metrics.laborCost + sim.metrics.rentCost)}이 나갔습니다. 오늘 이 돈을 먼저 벌어야 그다음부터 내 돈이 됩니다.`],
+      ["#station-dock", "사장의 자리", "사장을 어디 세울지가 오늘의 결정입니다. 줄이 길면 키친, 테이블이 쌓이면 홀, 손님이 없으면 입구. 지금은 자동 배치가 대신 움직입니다."],
+      ["#game-canvas", "손님", "손님을 누르면 왜 왔고 왜 나가는지 보입니다. 지나가는 행인을 누르면 전단지를 건넵니다."],
+    ], ({ skipped }) => {
+      platform.logEvent("tutorial_finished", { skipped });
+      if (state.view !== "operations" || state.simulation !== sim || sim.activeDilemma) return;
+      sim.setSpeed(1);
+      state.lastSpeed = 1;
     });
-    state.tutorial = tutorial;
-    tutorial.start();
   }
+}
+
+// 오늘 내린 결정을 시각과 함께 남긴다. 빨리 감기 조건이자 교육 기록(decisions)의 근거.
+function noteDecision(label) {
+  state.dayDecisions = [...state.dayDecisions, `${hourToClock(state.simulation.gameMinute)} ${label}`.slice(0, 80)].slice(-30);
+}
+
+function dayStatus(snapshot) {
+  return `${monthInfo(state.campaign?.month ?? 1).name} ${snapshot.day >= 6 ? "주말" : "평일"} · ${snapshot.clock}`;
+}
+
+// 첫날 안내 — 실제 화면의 요소를 차례로 비추는 말풍선. 모달 연습판은 없다.
+function runCoachmarks(steps, onDone) {
+  const layer = document.createElement("div");
+  layer.className = "tutorial-layer";
+  layer.innerHTML = '<div class="tutorial-ring"></div><div class="tutorial-card" role="dialog" aria-live="polite"></div>';
+  document.body.append(layer);
+  const ring = layer.querySelector(".tutorial-ring");
+  const card = layer.querySelector(".tutorial-card");
+  let index = 0;
+  const place = () => {
+    const box = document.querySelector(steps[index][0])?.getBoundingClientRect();
+    if (!box) return;
+    Object.assign(ring.style, { left: `${box.left - 6}px`, top: `${box.top - 6}px`, width: `${box.width + 12}px`, height: `${box.height + 12}px` });
+    // 아래 → 위 → 왼쪽 → 오른쪽 순으로 대상을 가리지 않는 자리에 말풍선을 둔다
+    const w = card.offsetWidth, h = card.offsetHeight, gap = 14;
+    const centered = clamp(box.left + box.width / 2 - w / 2, 12, innerWidth - w - 12);
+    const beside = clamp(box.top, 12, innerHeight - h - 12);
+    const [left, top] = box.bottom + gap + h < innerHeight ? [centered, box.bottom + gap]
+      : box.top - gap - h > 0 ? [centered, box.top - gap - h]
+      : box.left - gap - w > 0 ? [box.left - gap - w, beside]
+      : [clamp(box.right + gap, 12, innerWidth - w - 12), beside];
+    Object.assign(card.style, { left: `${left}px`, top: `${top}px` });
+  };
+  const show = () => {
+    const [, title, text] = steps[index];
+    card.innerHTML = `<div class="tutorial-head"><span class="tutorial-step">${index + 1} / ${steps.length}</span><button class="tutorial-skip" type="button" data-skip>건너뛰기</button></div><h3>${title}</h3><p>${text}</p><div class="tutorial-foot"><span class="tutorial-dots">${steps.map((_, i) => `<i class="${i < index ? "is-done" : i === index ? "is-current" : ""}"></i>`).join("")}</span><button class="tutorial-next" type="button" data-next>${index < steps.length - 1 ? "다음" : "영업 시작"}</button></div>`;
+    place();
+    card.querySelector("[data-next]").focus();
+  };
+  const finish = (skipped) => {
+    layer.remove();
+    window.removeEventListener("resize", place);
+    onDone({ skipped });
+  };
+  card.addEventListener("click", (event) => {
+    if (event.target.closest("[data-skip]")) finish(true);
+    else if (event.target.closest("[data-next]")) { index += 1; if (index < steps.length) show(); else finish(false); }
+  });
+  window.addEventListener("resize", place);
+  show();
 }
 
 const AGENT_STATE_LABEL = {
@@ -1658,13 +1525,20 @@ function showDilemma(dilemma) {
   if (!overlay.open) overlay.showModal();
   overlay.oncancel = event => event.preventDefault();
   overlay.querySelectorAll("[data-option]").forEach((button) => button.addEventListener("click", () => {
-    state.simulation.resolveDilemma(button.dataset.option);
+    const sim = state.simulation;
+    const before = { revenue: sim.metrics.revenue, cost: sim.metrics.actionCost };
+    const option = dilemma.options.find((item) => item.id === button.dataset.option);
+    sim.resolveDilemma(button.dataset.option);
     overlay.close();
     overlay.hidden = true;
     sounds.click();
-    const speed = state.lastSpeed ?? 1;
-    state.simulation.setSpeed(speed);
-    document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === speed));
+    noteDecision(`${dilemma.title} → ${option?.name ?? button.dataset.option}`);
+    const spot = gameScene?.registerSpot;
+    const spent = sim.metrics.actionCost - before.cost;
+    const earned = sim.metrics.revenue - before.revenue;
+    if (spot && spent > 0) gameScene.addFloater(spot.x, spot.y - 30, `−${formatMoney(spent)} ${option?.name ?? ""}`, "bad", 20);
+    if (spot && earned > 0) gameScene.addFloater(spot.x, spot.y - 70, `+${formatMoney(earned)} ${option?.name ?? ""}`, "good", 20);
+    sim.setSpeed(state.lastSpeed ?? 1);
   }));
 }
 
@@ -1706,27 +1580,11 @@ function menuFitBadge(sim, menuId) {
   return `<span class="fit-badge">${great ? `<b class="is-great">◎${great}</b>` : ""}${bad ? `<b class="is-bad">△${bad}</b>` : ""}</span>`;
 }
 
-function openNotebook() {
-  const sim = state.simulation;
-  const lessons = state.reports.map((report) => `<li><b>${report.day >= 6 ? "주말" : "평일"}</b> ${report.verdict}</li>`).join("");
-  const dialog = document.createElement("dialog");
-  dialog.className = "notebook-dialog";
-  dialog.innerHTML = `
-    <button class="modal-close" type="button">CLOSE ×</button>
-    <span class="meta-label">사장의 장사 노트</span>
-    <h2>손님이 가르쳐 준 것</h2>
-    <p class="notebook-lede">같은 메뉴도 손님에 따라 평가가 다릅니다. 3명 이상에게 제공하면 적합도가 기록됩니다.</p>
-    ${notebookTableMarkup(sim)}
-    ${lessons ? `<div class="notebook-lessons"><span class="meta-label">지난 마감의 교훈</span><ul>${lessons}</ul></div>` : ""}`;
-  document.body.append(dialog);
-  dialog.querySelector(".modal-close").addEventListener("click", () => dialog.close());
-  dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
-  dialog.addEventListener("close", () => dialog.remove());
-  dialog.showModal();
-}
-
 let lastPhaseId = null;
 let ownerWasOnDuty = true;
+let lastTickerEntry = null;
+let breakevenNotified = false;
+let openingCostsShown = false;
 
 function announcePhase(phase) {
   const banner = document.querySelector("#phase-banner");
@@ -1765,153 +1623,177 @@ function beginOperationLoop() {
 }
 
 let lastSaleSoundAt = 0;
+let saleBuffer = 0;
+let lastMoneyFloater = 0;
+let lastLostFloater = 0;
+const LOST_LABEL = { wait: "기다리다 포기", full: "자리 없음", price: "가격 보고 돌아섬", menu: "메뉴가 안 맞음" };
+const LOSS_SHORT = { wait: "대기", full: "만석", price: "가격", menu: "메뉴", value: "가성비", taste: "맛", delivery: "배달", atmosphere: "분위기" };
 
-// 판매·단골 이벤트 → 즉각적인 시각·청각 보상
+// 장면 위로 돈이 오간다: 판매(+), 놓친 손님(−1), 자동 배치의 이유.
+// 빠른 배속에서는 묶어서 띄워 화면이 숫자로 뒤덮이지 않게 한다.
 function consumeVisualEvents(sim) {
   const events = sim.drainVisualEvents();
-  if (!events.length) return;
-  let shown = 0;
+  const now = performance.now();
+  const fast = sim.speed >= 4;
   for (const event of events) {
-    if (event.type === "sale" && shown < 3) {
-      shown += 1;
-      const spot = gameScene?.registerSpot;
-      if (spot) gameScene.addFloater(spot.x, spot.y, `+${formatMoney(event.amount)}`, "good");
+    if (event.type === "sale") saleBuffer += event.amount;
+    else if (event.type === "lost" && now - lastLostFloater > (fast ? 900 : 300)) {
+      lastLostFloater = now;
+      const spot = gameScene?.drawnAgents.find((item) => item.id === event.agentId) ?? gameScene?.doorSpot;
+      if (spot) gameScene.addFloater(spot.x, spot.y - 60, `−1 ${LOST_LABEL[event.reason] ?? "이탈"}`, "bad");
     } else if (event.type === "autoMove") {
-      // 자동 배치가 사장을 움직일 때마다 이유가 화면에 뜬다
       const spot = gameScene?.ownerSpot;
       gameScene?.addFloater(spot?.x ?? 600, (spot?.y ?? 600) - 110, `🤖 ${event.reason}`, "neutral");
     }
   }
-  const now = performance.now();
-  if (now - lastSaleSoundAt > 350) {
-    lastSaleSoundAt = now;
-    sounds.tone(760, 0.05, "triangle", 0.02);
-    sounds.tone(1020, 0.07, "sine", 0.016, 0.05);
+  if (saleBuffer > 0 && now - lastMoneyFloater > (fast ? 700 : 220)) {
+    const spot = gameScene?.registerSpot;
+    if (spot) gameScene.addFloater(spot.x, spot.y, `+${formatMoney(saleBuffer)}`, "good", 18);
+    saleBuffer = 0;
+    lastMoneyFloater = now;
+    if (now - lastSaleSoundAt > 350) {
+      lastSaleSoundAt = now;
+      sounds.tone(760, 0.05, "triangle", 0.02);
+      sounds.tone(1020, 0.07, "sine", 0.016, 0.05);
+    }
   }
 }
 
+// 바뀐 숫자만 다시 쓰고 잠깐 반짝인다 — 장부가 살아 움직이는 느낌.
+function setMoney(id, value) {
+  const element = document.getElementById(id);
+  const text = formatMoney(value);
+  if (!element || element.textContent === text) return;
+  element.textContent = text;
+  element.classList.remove("tick");
+  void element.offsetWidth;
+  element.classList.add("tick");
+}
+
+function wonText(won) {
+  return `${won < 0 ? "−" : ""}₩${Math.abs(won).toLocaleString("ko-KR")}`;
+}
+
 function updateOperationsHud(snapshot) {
-  const byId = (id) => document.querySelector(`#${id}`);
+  const byId = (id) => document.getElementById(id);
   if (!byId("clock-value")) return;
+  const sim = state.simulation;
   byId("clock-value").textContent = snapshot.clock;
-  screen.querySelectorAll("[data-speed]").forEach(button => button.classList.toggle("active", Number(button.dataset.speed) === state.simulation.speed));
-  const bottleneck = snapshot.queueLength >= 4 ? { title: `주문 ${snapshot.queueLength}건이 기다립니다`, detail: "키친에 사장을 배치해 제조를 돕거나, 다음 계획에서 인력을 비교하세요.", station: "bar" }
-    : snapshot.dirtyCount > 0 ? { title: `빈 테이블 ${snapshot.dirtyCount}개가 정리를 기다립니다`, detail: "홀에 배치한 뒤 ‘빈 테이블 정리’를 누르세요. 좌석을 늘리기 전 회전을 확인합니다.", station: "hall" }
-    : snapshot.machineWear >= 0.25 ? { title: "머신 관리가 필요합니다", detail: "키친에 도착한 뒤 머신 청소를 누르세요. 관리 시간도 사장 노동에 포함됩니다.", station: "bar" }
-    : { title: snapshot.metrics.served ? "큰 운영 병목은 없습니다" : "첫 손님을 만날 준비", detail: `지금까지 제공 ${snapshot.metrics.served}명 · 발견 못한 이탈 ${snapshot.metrics.losses.awareness ?? 0}명. 입구 배치로 유입을 도울 수 있습니다.`, station: "door" };
-  byId("bottleneck-title").textContent = bottleneck.title;
-  byId("bottleneck-detail").textContent = bottleneck.detail;
-  byId("bottleneck-action").textContent = `${snapshot.stationNames[bottleneck.station]}에 배치`;
-  byId("bottleneck-action").dataset.station = bottleneck.station;
-  byId("bottleneck-action").disabled = !snapshot.onDuty || snapshot.finished;
-  byId("board-cash").textContent = formatMoney(snapshot.cash);
-  byId("board-sales").textContent = formatMoney(snapshot.metrics.revenue);
-  byId("board-hours").textContent = `${(snapshot.ownerMinutesToday / 60).toFixed(1)}시간`;
-  byId("phase-label").textContent = snapshot.phase.label;
+  byId("phase-label").textContent = snapshot.phase.korean;
+  byId("day-progress").style.width = `${snapshot.progress * 100}%`;
+  const status = dayStatus(snapshot);
+  if (topbarStatus.textContent !== status) topbarStatus.innerHTML = statusMarkup(status);
   if (snapshot.phase.id !== lastPhaseId) {
     lastPhaseId = snapshot.phase.id;
     if (!snapshot.finished && snapshot.phase.id !== "prep") announcePhase(snapshot.phase);
   }
-  // 사장은 스스로 출근하고 쉰다. 남은 시간만 정해져 있다.
+  screen.querySelectorAll("[data-speed]").forEach((button) => button.classList.toggle("active", Number(button.dataset.speed) === sim.speed));
+  byId("fast-forward").classList.toggle("is-locked", !state.dayDecisions.length);
+
+  // ── 오늘 장부: 문 열 때 나간 고정비에서 시작해 판매·재료·세금 적립이 실시간으로 쌓인다
+  const ledger = sim.ledger();
+  setMoney("lg-revenue", ledger.revenue);
+  setMoney("lg-labor", -ledger.labor);
+  setMoney("lg-rent", -ledger.rent);
+  setMoney("lg-goods", -ledger.goods);
+  setMoney("lg-other", -ledger.other);
+  setMoney("lg-profit", ledger.profit);
+  byId("lg-profit").classList.toggle("is-good", ledger.profit >= 0);
+  byId("lg-profit").classList.toggle("is-bad", ledger.profit < 0);
+  const fixed = ledger.labor + ledger.rent;
+  const covered = fixed > 0 ? clamp((ledger.revenue - ledger.goods - ledger.other) / fixed) : 1;
+  byId("lg-breakeven").style.width = `${covered * 100}%`;
+  byId("lg-breakeven-label").textContent = ledger.profit >= 0 ? "고정비 회수 끝 · 지금부터 남는 돈" : `월세·인건비 ${Math.round(covered * 100)}% 회수`;
+  const hours = snapshot.ownerMinutesToday / 60;
+  const wage = byId("lg-wage");
+  const wageWon = hours >= 1 ? Math.round((ledger.profit * 10000) / hours) : null;
+  wage.textContent = wageWon === null ? "—" : wonText(wageWon);
+  wage.className = wageWon === null ? "" : wageWon >= GAME_CONFIG.minimumWage ? "is-good" : wageWon < 0 ? "is-bad" : "is-warn";
+  byId("lg-hours").textContent = `사장 ${hours.toFixed(1)}시간${snapshot.onDuty ? "" : " · 휴식 중"}${wageWon === null ? " · 1시간부터 계산" : ""}`;
+  const m = snapshot.metrics;
+  const leaks = Object.entries(m.losses).filter(([key, count]) => key !== "awareness" && count > 0).sort((a, b) => b[1] - a[1]);
+  const lost = leaks.reduce((sum, [, count]) => sum + count, 0);
+  byId("lg-guests").textContent = `지나간 ${m.footfall} · 입장 ${m.entered} · 만족 ${m.satisfied}${lost ? ` · 놓침 ${lost} (${leaks.slice(0, 2).map(([key, count]) => `${LOSS_SHORT[key] ?? key} ${count}`).join(" · ")})` : ""}`;
+  if (!breakevenNotified && ledger.profit >= 0 && !snapshot.finished) {
+    breakevenNotified = true;
+    sounds.good();
+    toast("월세·인건비를 다 벌었습니다. 지금부터 버는 돈이 남는 돈입니다.");
+    byId("ledger").classList.add("is-breakeven");
+    const spot = gameScene?.registerSpot;
+    if (spot) gameScene.addFloater(spot.x, spot.y - 50, "손익분기 돌파!", "gold", 26);
+  }
+  // 문을 연 순간 이미 나간 돈 — 시계가 처음 움직일 때 장면에 떨어진다
+  if (!openingCostsShown && sim.speed > 0 && gameScene?.doorSpot) {
+    openingCostsShown = true;
+    gameScene.addFloater(gameScene.doorSpot.x, gameScene.doorSpot.y, `−${formatMoney(ledger.rent)} 월세 하루치`, "bad", 20);
+    if (ledger.labor > 0) gameScene.addFloater(gameScene.registerSpot.x, gameScene.registerSpot.y - 40, `−${formatMoney(ledger.labor)} 오늘 인건비`, "bad", 20);
+  }
+
+  // ── 사장 조작
+  byId("station-dock").querySelectorAll("[data-station]").forEach((button) => {
+    const id = button.dataset.station;
+    button.classList.toggle("is-active", snapshot.stationActive === id);
+    button.classList.toggle("is-moving", snapshot.stationMoving && snapshot.ownerStation === id);
+    button.disabled = snapshot.finished;
+  });
+  byId("station-auto").classList.toggle("is-active", !!snapshot.ownerAuto);
+  byId("station-auto").disabled = snapshot.finished;
+  const total = Math.max(1, snapshot.ownerBudgetTotal ?? 1);
+  const left = snapshot.ownerBudgetLeft ?? 0;
+  const stress = snapshot.ownerStress ?? 0;
+  byId("work-fill").style.width = `${clamp(left / total) * 100}%`;
+  byId("stress-fill").style.width = `${clamp(stress / 100) * 100}%`;
+  byId("stress-fill").classList.toggle("is-high", stress >= 50);
+  byId("stress-fill").classList.toggle("is-critical", stress >= 80);
+  const leftText = `${Math.floor(left / 60)}h ${Math.round(left % 60)}m 남음`;
+  byId("work-label").textContent = snapshot.ownerWorking ? (snapshot.ownerOvertime ? "퇴근" : "쉬기") : left > 0 ? "복귀" : "초과 근무";
+  byId("work-left").textContent = snapshot.ownerOvertime ? "초과 근무 · 스트레스 ↑" : left > 0 ? leftText : "스트레스 ↑";
   const workToggle = byId("work-toggle");
-  if (workToggle) {
-    const total = Math.max(1, snapshot.ownerBudgetTotal ?? 1);
-    const left = snapshot.ownerBudgetLeft ?? 0;
-    byId("work-fill").style.width = `${clamp(left / total) * 100}%`;
-    const stressFill = byId("stress-fill");
-    if (stressFill) {
-      const stress = snapshot.ownerStress ?? 0;
-      stressFill.style.width = `${clamp(stress / 100) * 100}%`;
-      stressFill.classList.toggle("is-high", stress >= 50);
-      stressFill.classList.toggle("is-critical", stress >= 80);
-    }
-    byId("work-label").textContent = snapshot.ownerWorking
-      ? (snapshot.ownerOvertime ? "초과 근무 중" : "쉬기")
-      : left > 0 ? "출근" : "초과 근무";
-    byId("work-left").textContent = left > 0
-      ? `${Math.floor(left / 60)}h ${Math.round(left % 60)}m`
-      : snapshot.ownerOvertime ? "스트레스 ↑" : "0";
-    workToggle.classList.toggle("is-working", !!snapshot.ownerWorking);
-    workToggle.classList.toggle("is-overtime", !!snapshot.ownerOvertime);
-    workToggle.classList.toggle("is-spent", left <= 0 && !snapshot.ownerWorking);
-    // 시간이 0이어도 초과 근무로 다시 들어갈 수 있으니 버튼은 살아 있다
-    workToggle.disabled = snapshot.finished || (snapshot.ownerStress ?? 0) >= 100 && !snapshot.ownerWorking;
-  }
-  // 예약된 아케이드 — 자리에 실제로 도착하는 순간 화면이 바뀐다 (자동 모드에서는 열지 않는다)
-  if (snapshot.ownerAuto) state.pendingArcade = null;
-  if (state.pendingArcade && snapshot.stationActive === state.pendingArcade && !state.arcadeOpen) {
-    const stationId = state.pendingArcade;
-    state.pendingArcade = null;
-    launchArcade(stationId);
-  }
-  const dock = byId("station-dock");
-  if (dock) {
-    const autoButton = byId("station-auto");
-    if (autoButton) {
-      autoButton.classList.toggle("is-active", !!snapshot.ownerAuto);
-      // 자동은 출근 전에도 켤 수 있다 — 켜는 순간 사장을 출근시키고 4배속으로 하루를 돌린다
-      autoButton.disabled = snapshot.finished;
-    }
-    dock.querySelectorAll("[data-station]").forEach((button) => {
-      const id = button.dataset.station;
-      button.classList.toggle("is-active", snapshot.stationActive === id);
-      button.classList.toggle("is-moving", snapshot.stationMoving && snapshot.ownerStation === id);
-      button.disabled = !snapshot.onDuty || snapshot.finished;
-      const label = button.querySelector("[data-station-name]");
-      if (label && snapshot.stationNames?.[id]) label.textContent = snapshot.stationNames[id];
-    });
-  }
+  workToggle.classList.toggle("is-working", !!snapshot.ownerWorking);
+  workToggle.classList.toggle("is-overtime", !!snapshot.ownerOvertime);
+  workToggle.classList.toggle("is-spent", left <= 0 && !snapshot.ownerWorking);
+  workToggle.disabled = snapshot.finished || (stress >= 100 && !snapshot.ownerWorking);
   document.querySelector(".operations-screen")?.classList.toggle("owner-off", !snapshot.onDuty);
   if (!snapshot.onDuty && ownerWasOnDuty && !snapshot.finished) {
     ownerWasOnDuty = false;
-    if ((snapshot.ownerBudgetLeft ?? 0) <= 0) {
+    if (left <= 0) {
       announcePhase({ id: "offduty", label: "OWNER OFF DUTY", korean: "사장 퇴근 — 남은 영업은 직원에게" });
-      toast("정한 시간이 끝났습니다. 스페이스를 다시 누르면 초과 근무 — 스트레스가 쌓입니다.");
-      state.simulation.setSpeed(4);
-      document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", Number(item.dataset.speed) === 4));
+      toast("정한 시간이 끝났습니다. 자리 버튼을 누르면 초과 근무 — 스트레스가 쌓입니다.");
+      if (sim.speed > 0 && sim.speed < 4) sim.setSpeed(4);
     }
   } else if (snapshot.onDuty && !ownerWasOnDuty) {
     ownerWasOnDuty = true;
   }
 
-  const flyerCount = byId("flyer-count");
-  if (flyerCount) flyerCount.textContent = snapshot.flyersLeft ?? 0;
-  const hallMeter = byId("meter-hall");
-  if (hallMeter && snapshot.tables?.length) {
-    const dirtyRatio = snapshot.dirtyCount / snapshot.tables.length;
-    hallMeter.style.width = `${dirtyRatio * 100}%`;
-    hallMeter.style.background = dirtyRatio >= 0.5 ? "#c83b2f" : "#f4511e";
-    byId("value-hall").textContent = snapshot.dirtyCount ? `치울 것 ${snapshot.dirtyCount}` : "깨끗함";
+  // ── 한 줄 티커: 가게에서 방금 일어난 일
+  const latest = snapshot.feed[0];
+  if (latest && latest !== lastTickerEntry) {
+    lastTickerEntry = latest;
+    const ticker = byId("ticker");
+    ticker.className = `ticker ${latest.tone}`;
+    ticker.innerHTML = `<time>${latest.time}</time>${escapeHtml(latest.message)}`;
   }
-  byId("day-progress").style.width = `${snapshot.progress * 100}%`;
-  byId("hud-cash").textContent = formatMoney(snapshot.cash, true);
-  byId("hud-sales").textContent = formatMoney(snapshot.metrics.revenue, true);
-  const kitchenLoad = clamp(snapshot.queueLength / Math.max(1, state.simulation.kitchenLanes.length * 4)) * 100;
-  byId("meter-kitchen").style.width = `${kitchenLoad}%`;
-  byId("meter-kitchen").style.background = kitchenLoad > 78 ? "#c83b2f" : "#f4511e";
-  byId("value-kitchen").textContent = `${Math.round(kitchenLoad)}%`;
-  byId("meter-reputation").style.width = `${snapshot.reputation}%`;
-  byId("value-reputation").textContent = Math.round(snapshot.reputation);
-  byId("meter-hygiene").style.width = `${snapshot.hygiene}%`;
-  byId("value-hygiene").textContent = Math.round(snapshot.hygiene);
-  byId("funnel-footfall").textContent = snapshot.metrics.footfall;
-  byId("funnel-entered").textContent = snapshot.metrics.entered;
-  byId("funnel-served").textContent = snapshot.metrics.served;
-  byId("funnel-satisfied").textContent = snapshot.metrics.satisfied;
-  topbarStatus.innerHTML = statusMarkup(`${monthInfo(state.campaign?.month ?? 1).name} ${snapshot.day >= 6 ? "주말" : "평일"} · ${snapshot.clock}`);
-  const feed = byId("feed-list");
-  const latest = snapshot.feed.slice(0, 12);
-  feed.innerHTML = latest.length ? latest.map((entry) => `<div class="feed-item ${entry.tone}"><time>${entry.time}</time><span>${escapeHtml(entry.message)}</span></div>`).join("") : `<div class="feed-item"><time>${snapshot.clock}</time><span>손님이 오기를 기다리는 중입니다.</span></div>`;
-  if (snapshot.finished) {
-    const reportButton = byId("open-report");
-    reportButton.disabled = false;
-    reportButton.textContent = "마감 완료 · 근거 리포트 열기 →";
-    if (!reportReadyNotified) {
-      reportReadyNotified = true;
-      sounds.bell();
-      toast("오늘 영업이 끝났습니다. 어떤 단계에서 손님을 놓쳤는지 확인하세요.");
-    }
+
+  // 마감 — 잠깐 마지막 장부를 보여 준 뒤 영수증(마감 리포트)으로 넘어간다
+  if (snapshot.finished && !reportReadyNotified) {
+    reportReadyNotified = true;
+    sounds.bell();
+    announcePhase({ id: "closed", label: "CLOSED", korean: "영업 종료 — 오늘의 영수증" });
+    setTimeout(() => { if (state.view === "operations" && state.simulation === sim) closeDay(); }, 1800);
   }
+}
+
+function closeDay() {
+  const sim = state.simulation;
+  const report = sim.lastReport;
+  if (!report) return;
+  state.reports.push(report);
+  // 교육 기록: 그날 무엇을 정했고 결과가 어땠는지 (활동 보고서의 근거)
+  state.campaign.decisionLog = [...(state.campaign.decisionLog ?? []), {
+    month: state.campaign.month, day: report.day, decisions: [...state.dayDecisions],
+    profitWon: Math.round(report.metrics.profit * 10000), ownerHours: Math.round(report.metrics.ownerMinutes / 6) / 10,
+  }].slice(-40);
+  setView("report");
 }
 
 const LOSS_EXPLANATIONS = {
@@ -1952,24 +1834,21 @@ function renderReport() {
   const report = state.simulation.lastReport;
   const m = report.metrics;
   const previous = state.reports.length > 1 ? state.reports.at(-2) : null;
-  const delta = (current, before, { money = false, unit = "", inverse = false, digits = 1 } = {}) => {
-    if (!previous || !Number.isFinite(before)) return `<small class="kpi-delta">첫날 기준선</small>`;
-    const change = current - before;
-    const favorable = inverse ? change < 0 : change > 0;
-    const neutral = Math.abs(change) < 0.005;
-    const value = money
-      ? `${change > 0 ? "+" : ""}${formatMoney(change)}`
-      : `${change > 0 ? "+" : ""}${change.toFixed(digits)}${unit}`;
-    return `<small class="kpi-delta ${neutral ? "" : favorable ? "good" : "bad"}">전일 ${value}</small>`;
-  };
   const maxFunnel = Math.max(1, m.footfall);
   const funnel = [
     ["유동·검색", m.footfall], ["매장 인지", m.aware], ["입장", m.entered], ["주문", m.ordered],
     ["정상 제공", m.served], ["만족", m.satisfied], ["재방문 의향", m.repeatIntent],
   ];
-  const operatingCosts = (metrics) => ["foodCost", "platformCost", "wasteCost", "laborCost", "rentCost", "taxCost", "utilityCost", "actionCost"].reduce((sum, key) => sum + (metrics[key] ?? 0), 0);
-  const totalCosts = operatingCosts(m);
   const ownerHours = (m.ownerMinutes ?? 0) / 60;
+  const wageWon = ownerHours > 0 ? Math.round((m.profit * 10000) / ownerHours) : null;
+  // 영업 중 '오늘 장부'와 같은 다섯 줄, 같은 순서
+  const receipt = [
+    ["매출", m.revenue, "부가세 포함"],
+    ["인건비", -m.laborCost, "보험·퇴직 적립은 월 정산"],
+    ["월세", -m.rentCost, "한 달 월세 ÷ 30"],
+    ["재료·수수료", -(m.foodCost + m.platformCost + m.wasteCost), "원두·부재료·배달 수수료·폐기"],
+    ["기타", -(m.taxCost + m.utilityCost + m.actionCost), "부가세 적립·공과금·운영"],
+  ];
   const reviews = m.reviews.length ? [...m.reviews].sort((a, b) => a.stars - b.stars).slice(0, 3) : [
     { customer: "마감 메모", stars: 0, text: "오늘은 공개 리뷰가 없었습니다. 행동 퍼널을 먼저 읽으세요.", tone: "neutral" },
   ];
@@ -1978,51 +1857,51 @@ function renderReport() {
   screen.innerHTML = `
     <section class="report-screen enter-up">
       <header class="report-header">
-        <div><p class="section-kicker">${monthInfo(state.campaign.month).name} / ${isWeekendReport ? "WEEKEND" : "WEEKDAY"} CLOSE</p><h1 class="report-title">${isWeekendReport ? "주말 마감 리포트" : "평일 마감 리포트"}<br /><em>어디서 새었나.</em></h1></div>
-        <div class="report-verdict"><strong>${report.topLoss.label} · ${report.topLoss.count}명</strong><p>${report.verdict}</p></div>
+        <div>
+          <p class="section-kicker">${monthInfo(state.campaign.month).name} · ${isWeekendReport ? "주말" : "평일"} 마감</p>
+          <h1 class="report-title">오늘 남은 돈</h1>
+          <strong class="report-profit ${m.profit >= 0 ? "is-good" : "is-bad"}">${formatMoney(m.profit)}</strong>
+          <p class="report-wage">내 시급 <b class="${wageWon === null ? "" : wageWon >= GAME_CONFIG.minimumWage ? "is-good" : "is-bad"}">${wageWon === null ? "—" : wonText(wageWon)}</b> · 사장 ${ownerHours.toFixed(1)}시간${previous ? ` · 전일 대비 ${m.profit - previous.metrics.profit >= 0 ? "+" : ""}${formatMoney(m.profit - previous.metrics.profit)}` : ""}</p>
+        </div>
       </header>
-      <div class="report-kpis">
-        <div class="report-kpi"><span class="metric-label">매출</span><strong>${formatMoney(m.revenue)}</strong>${delta(m.revenue, previous?.metrics.revenue, { money: true })}</div>
-        <div class="report-kpi"><span class="metric-label">영업비용</span><strong>${formatMoney(totalCosts)}</strong>${delta(totalCosts, previous ? operatingCosts(previous.metrics) : undefined, { money: true, inverse: true })}</div>
-        <div class="report-kpi"><span class="metric-label">영업이익</span><strong class="${m.profit >= 0 ? "positive" : "negative"}">${formatMoney(m.profit)}</strong>${delta(m.profit, previous?.metrics.profit, { money: true })}</div>
-        <div class="report-kpi"><span class="metric-label">평균 대기</span><strong>${m.averageWait.toFixed(1)}분</strong>${delta(m.averageWait, previous?.metrics.averageWait, { unit: "분", inverse: true })}</div>
-        <div class="report-kpi"><span class="metric-label">평판</span><strong>${(report.reputation / 20).toFixed(1)} / 5</strong>${delta(report.reputation / 20, previous ? previous.reputation / 20 : undefined, { digits: 2 })}</div>
-        <div class="report-kpi"><span class="metric-label">사장 노동</span><strong>${ownerHours.toFixed(1)}시간</strong><small class="kpi-delta">직접 개입 포함</small></div>
-      </div>
-      <details class="report-panel"><summary>오늘의 원장·손님 퍼널·리뷰 펼치기</summary>
-      <div class="ledger-strip"><span class="meta-label">상담 엑셀 원장</span>
-        <div class="ledger-row"><span>재료(원두·부재료)</span><b>${formatMoney(m.foodCost)}</b></div>
-        <div class="ledger-row"><span>직원 급여 <small>(보험·퇴직 적립은 월 정산)</small></span><b>${formatMoney(m.laborCost)}</b></div>
-        <div class="ledger-row"><span>월세 1/30</span><b>${formatMoney(m.rentCost)}</b></div>
-        <div class="ledger-row"><span>부가세 적립 <small>(수입÷11 · 매입세액 미반영)</small></span><b>${formatMoney(m.taxCost)}</b></div>
-        <div class="ledger-row"><span>공과금·복리후생 5%</span><b>${formatMoney(m.utilityCost)}</b></div>
-        <div class="ledger-row"><span>플랫폼·폐기·운영액션</span><b>${formatMoney(m.platformCost + m.wasteCost + m.actionCost)}</b></div>
-      </div>
+      <section class="receipt" aria-label="오늘 영수증">
+        <span class="meta-label">오늘 영수증 · 영업 중 장부와 같은 숫자</span>
+        ${receipt.map(([label, value, note]) => `<div class="receipt-line"><span>${label}<small>${note}</small></span><b>${formatMoney(value)}</b></div>`).join("")}
+        <div class="receipt-total ${m.profit >= 0 ? "is-good" : "is-bad"}"><span>남은 돈<small>세전 · 4대보험·카드수수료 같은 월 정산 비용 전</small></span><b>${formatMoney(m.profit)}</b></div>
+      </section>
+      ${report.topLosses.length ? `<section class="report-panel month-coach">
+        <span class="meta-label">놓친 손님 · 다음엔 이렇게</span>
+        <div class="coach-list">${report.topLosses.slice(0, 2).map((loss, index) => `<div class="coach-item"><span class="coach-rank">${index + 1}</span><div><strong>${LOSS_COACH[loss.id]?.label ?? loss.label} <em>${loss.count}명</em></strong><p>${LOSS_COACH[loss.id]?.tip ?? escapeHtml(loss.detail ?? "")}</p></div></div>`).join("")}</div>
+        <p class="leak-verdict">${report.verdict}</p>
+      </section>` : ""}
+      ${coachMarkup()}
+      <details class="report-panel report-more"><summary>자세히 — 손님 퍼널·리뷰·장사 노트·조건 비교</summary>
       <div class="report-grid">
-        <section class="report-panel"><span class="meta-label">CUSTOMER FUNNEL</span><h2>지나간 사람보다, 떨어져 나간 이유</h2><div class="funnel-chart">
+        <section class="report-panel"><span class="meta-label">손님 퍼널</span><h2>지나간 사람보다, 떨어져 나간 이유</h2><div class="funnel-chart">
           ${funnel.map(([label, value]) => `<div class="funnel-step"><span>${label}</span><div class="funnel-track"><i style="width:${value / maxFunnel * 100}%"></i></div><strong>${value}명</strong></div>`).join("")}
         </div></section>
-        <section class="report-panel"><span class="meta-label">TOP LEAKS</span><h2>오늘 놓친 수요</h2><div class="loss-list">
+        <section class="report-panel"><span class="meta-label">놓친 수요 전체</span><h2>오늘 놓친 수요</h2><div class="loss-list">
           ${report.topLosses.slice(0, 5).map((loss) => `<div class="loss-item"><span class="loss-icon">!</span><div><strong>${loss.label}</strong><p>${escapeHtml(loss.detail ?? LOSS_EXPLANATIONS[loss.id])}</p></div><b>${loss.count}<small>${Math.round(loss.rate * 100)}%</small></b></div>`).join("") || "<p>의미 있는 이탈이 없었습니다.</p>"}
         </div></section>
       </div>
-      ${report.fitReveals?.length ? `<section class="report-panel discovery-panel"><span class="meta-label">TODAY'S DISCOVERY</span><h2>오늘 손님이 가르쳐 준 것</h2><div class="discovery-grid">
+      ${report.fitReveals?.length ? `<section class="report-panel discovery-panel"><span class="meta-label">오늘의 발견</span><h2>오늘 손님이 가르쳐 준 것</h2><div class="discovery-grid">
         ${report.fitReveals.map((reveal) => {
           const menu = getById(MENUS, reveal.menuId);
           const customer = getById(CUSTOMERS, reveal.customerId);
           const toneClass = reveal.symbol === "◎" ? "good" : reveal.symbol === "○" ? "" : "bad";
           return `<div class="discovery-item ${toneClass}"><b>${reveal.symbol}</b><div><strong>${menu?.name ?? reveal.menuId} × ${customer?.short ?? reveal.customerId}</strong><span>${reveal.symbol === "◎" ? "이 조합이 우리 가게의 무기입니다." : reveal.symbol === "○" ? "나쁘지 않지만 결정적이지 않습니다." : "이 손님에게는 다른 답이 필요합니다."}</span></div></div>`;
         }).join("")}
-      </div><p class="discovery-hint">발견한 적합도는 영업 화면의 ‘장사 노트’에 계속 쌓입니다.</p></section>` : ""}
+      </div></section>` : ""}
       ${(() => {
         const owner = report.metrics.ownerActions;
-        if (!owner || (owner.flyers === 0 && owner.drinks === 0 && owner.cleaned === 0 && !report.metrics.actionCost)) return "";
+        if (!owner) return "";
         const parts = [];
         if (owner.flyers) parts.push(`전단지 ${owner.flyers}장 → 관심 ${owner.flyerEntered}명`);
         if (owner.drinks) parts.push(`음료 서비스 ${owner.drinks}잔 → 이탈 구제 ${owner.drinksSaved}명`);
         if (owner.cleaned) parts.push(`직접 치운 테이블 ${owner.cleaned}개`);
-        if (!parts.length) return "";
-        return `<div class="owner-report"><span class="meta-label">사장의 손</span><p>${parts.join(" · ")}</p></div>`;
+        if (owner.machineCleans) parts.push(`머신 청소 ${owner.machineCleans}회`);
+        if (owner.restocks) parts.push(`쇼케이스 보충 ${owner.restocks}회`);
+        return parts.length ? `<div class="owner-report"><span class="meta-label">사장의 손</span><p>${parts.join(" · ")}</p></div>` : "";
       })()}
       <div class="report-bottom">
         <section class="report-panel notebook-panel">
@@ -2032,13 +1911,12 @@ function renderReport() {
           ${notebookTableMarkup(state.simulation)}
         </section>
         <div class="review-stack">
-          ${report.influencerNote ? `<div class="influencer-note ${report.influencerNote.tone}"><span class="meta-label">AFTER HOURS</span><p>${report.influencerNote.text}</p></div>` : ""}
-          ${reviews.map((review) => `<article class="review-card ${review.tone}"><span class="meta-label">${review.stars ? `${"★".repeat(Math.floor(review.stars))} ${review.stars.toFixed(1)}` : "NO REVIEW"} · ${review.customer}</span><p>“${escapeHtml(review.text)}”</p><span class="metric-label">${review.reason ? (review.tone === "good" ? PRAISE_EXPLANATIONS[review.reason] : LOSS_EXPLANATIONS[review.reason]) ?? "고객 경험" : "행동 데이터 우선"}</span></article>`).join("")}
+          ${report.influencerNote ? `<div class="influencer-note ${report.influencerNote.tone}"><span class="meta-label">영업 후</span><p>${report.influencerNote.text}</p></div>` : ""}
+          ${reviews.map((review) => `<article class="review-card ${review.tone}"><span class="meta-label">${review.stars ? `${"★".repeat(Math.floor(review.stars))} ${review.stars.toFixed(1)}` : "리뷰 없음"} · ${review.customer}</span><p>“${escapeHtml(review.text)}”</p><span class="metric-label">${review.reason ? (review.tone === "good" ? PRAISE_EXPLANATIONS[review.reason] : LOSS_EXPLANATIONS[review.reason]) ?? "고객 경험" : "행동 데이터 우선"}</span></article>`).join("")}
         </div>
       </div>
-      </details>
-      ${coachMarkup()}
       ${experimentMarkup()}
+      </details>
       <div class="report-actions">${!isWeekendReport && state.campaign.month === 1
         ? `<button class="cta" id="go-next" type="button"><span>주말 영업 준비</span><span aria-hidden="true">→</span></button>`
         : `<button class="cta" id="go-next" type="button"><span>${monthInfo(state.campaign.month).name} 마감 정산</span><span aria-hidden="true">→</span></button>`}</div>
@@ -2217,6 +2095,15 @@ function renderMonthClose() {
     .map(([key, count]) => ({ key, count, ...(LOSS_COACH[key] ?? { label: key, tip: "" }) }));
   const c = summary.costs;
   const sh = summary.shares;
+  const monthWage = summary.ownerMinutes > 0 ? Math.round((summary.profit * 10000) / (summary.ownerMinutes / 60)) : null;
+  // 영수증 다섯 줄 — 자세한 14줄 원장은 '자세히' 안에 그대로 둔다
+  const monthReceipt = [
+    ["재료", c.food + c.waste, "원두·부재료·폐기"],
+    ["인건비", c.labor + c.severance + c.insurance, "퇴직금 적립·4대보험 포함"],
+    ["월세", c.rent, "계약 월세"],
+    ["수수료·소모품", c.cardFee + c.delivery + c.supplies + c.keeping, "카드·배달 수수료·소모품·기장"],
+    ["기타", c.utility + (c.interest ?? 0) + (c.action ?? 0) + (c.oneOffExpense ?? 0), "공과금·대출 이자·운영·일회성"],
+  ];
   // 실매출에서 하나씩 빼고 마지막에 남는 돈을 보여준다
   const costRows = [
     ["재료비 (매출원가)", c.food, sh.food, null],
@@ -2253,16 +2140,16 @@ function renderMonthClose() {
         <div class="report-kpi"><span class="metric-label">월 비용</span><strong>${formatMoney(summary.totalCost)}</strong>${previous ? deltaChip(summary.totalCost, previous.totalCost, true) : '<small class="kpi-delta">첫 달 기준선</small>'}</div>
         <div class="report-kpi"><span class="metric-label">월 순이익</span><strong class="${summary.profit >= 0 ? "positive" : "negative"}">${formatMoney(summary.profit)}</strong>${previous ? deltaChip(summary.profit, previous.profit) : '<small class="kpi-delta">첫 달 기준선</small>'}</div>
         <div class="report-kpi"><span class="metric-label">영업일</span><strong>${summary.days.weekdays + summary.days.weekends}일</strong><small class="kpi-delta">평일 ${summary.days.weekdays} · 주말 ${summary.days.weekends}</small></div>
-        <div class="report-kpi"><span class="metric-label">사장 노동</span><strong>${ownerHours}시간</strong><small class="kpi-delta ${weeklyHours >= 52 ? "bad" : ""}">주 ${weeklyHours}시간${weeklyHours >= 52 ? " · 과로 구간" : weeklyHours >= 40 ? " · 풀타임 이상" : ""}</small><small class="kpi-delta ${stressNow >= 50 ? "bad" : "good"}">스트레스 ${stressNow} / 100</small></div>
+        <div class="report-kpi"><span class="metric-label">사장 노동</span><strong>${ownerHours}시간</strong><small class="kpi-delta ${weeklyHours >= 52 ? "bad" : ""}">주 ${weeklyHours}시간${weeklyHours >= 52 ? " · 과로 구간" : weeklyHours >= 40 ? " · 풀타임 이상" : ""}</small><small class="kpi-delta ${stressNow >= 50 ? "bad" : "good"}">스트레스 ${stressNow} / 100</small><small class="kpi-delta ${monthWage !== null && monthWage >= GAME_CONFIG.minimumWage ? "good" : "bad"}">월 시급 ${monthWage === null ? "—" : wonText(monthWage)}</small></div>
         <div class="report-kpi"><span class="metric-label">보유 현금</span><strong>${formatMoney(summary.cashAfter)}</strong><small class="kpi-delta">${summary.cashAfter < 500 ? "위험 — 운전자금 부족" : "운영 가능"}</small></div>
       </div>
 
-      <details class="report-panel"><summary>월 현금 대사·비용 원장·이탈·이벤트 펼치기</summary>
-      <div class="reality-check cash-reconciliation">
-        <span class="meta-label">현금 대사 · 초기 보증금/집기는 개업 때 지급 · 운영이익과 별도</span>
-        <p>월초 ${formatMoney(summary.cashBefore)} + 영업이익 ${formatMoney(summary.profit)} − 추가 자산 취득 ${formatMoney(summary.investmentOutflow ?? 0)} = 월말 ${formatMoney(summary.cashAfter)}</p>
-        ${(summary.oneOff?.entries ?? []).map((entry) => `<p>${escapeHtml(entry.label)} · ${formatMoney(entry.cost)} · ${entry.investment ? "자산 취득 (현금만 차감)" : "일회성 비용 (손익 반영)"}</p>`).join("")}
-      </div>
+      <section class="receipt" aria-label="${summary.name} 영수증">
+        <span class="meta-label">${summary.name} 영수증 · 대표일 두 날을 한 달로 환산</span>
+        <div class="receipt-line is-revenue"><span>실매출<small>부가세 적립 제외</small></span><b>${formatMoney(summary.netRevenue)}</b></div>
+        ${monthReceipt.map(([label, value, note]) => `<div class="receipt-line"><span>${label}<small>${note}</small></span><b>${formatMoney(-value)}</b></div>`).join("")}
+        <div class="receipt-total ${summary.profit >= 0 ? "is-good" : "is-bad"}"><span>남은 돈<small>세전 영업이익</small></span><b>${formatMoney(summary.profit)}</b></div>
+      </section>
 
       <div class="reality-check">
         <span class="meta-label">하루 감각 vs 한 달 현실</span>
@@ -2273,6 +2160,13 @@ function renderMonthClose() {
           <div class="is-gap"><span>사라진 돈</span><b>${formatMoney(gap)}</b></div>
         </div>
         <p>4대보험·카드수수료·소모품·기장료는 하루 장사에서는 보이지 않습니다. 월 단위로만 청구되거든요.</p>
+      </div>
+
+      <details class="report-panel"><summary>자세히 — 현금 대사·14줄 원장·이탈·이벤트</summary>
+      <div class="reality-check cash-reconciliation">
+        <span class="meta-label">현금 대사 · 초기 보증금/집기는 개업 때 지급 · 운영이익과 별도</span>
+        <p>월초 ${formatMoney(summary.cashBefore)} + 영업이익 ${formatMoney(summary.profit)} − 추가 자산 취득 ${formatMoney(summary.investmentOutflow ?? 0)} = 월말 ${formatMoney(summary.cashAfter)}</p>
+        ${(summary.oneOff?.entries ?? []).map((entry) => `<p>${escapeHtml(entry.label)} · ${formatMoney(entry.cost)} · ${entry.investment ? "자산 취득 (현금만 차감)" : "일회성 비용 (손익 반영)"}</p>`).join("")}
       </div>
 
       ${coachItems.length ? `<div class="month-coach">
@@ -2575,7 +2469,7 @@ function compactReport() {
     if (more.lastElementChild.children.length) kpis.after(more);
   }
   const coach = root.querySelector(".evidence-coach");
-  if (coach && kpis) kpis.after(coach);
+  if (coach && kpis && !root.querySelector(".receipt")) kpis.after(coach);
 }
 function deltaChip(current, before, inverse = false) {
   const change = current - before;
@@ -3083,7 +2977,7 @@ function recordLearning() {
     district: state.simulation.district.id, format: state.simulation.format.id, startingCapital: 15000, months: campaign.months.length, completed: complete, updatedAt: Date.now(),
     ownerHours: campaign.ownerMinutesTotal / 60, comparisons: new Set(campaign.comparedConditions ?? (campaign.experiments ?? []).map((result) => `${result.before.monthNumber}:${result.change.key}:${result.change.id}`)).size,
     sources: campaign.learning.sources, pre: campaign.learning.pre, post: campaign.learning.post,
-    netProfit: settlement?.netProfit ?? null, hourlyWon: settlement?.hourlyWon ?? null, cash: complete ? campaign.cashAfterTax : null });
+    netProfit: settlement?.netProfit ?? null, hourlyWon: settlement?.hourlyWon ?? null, cash: complete ? campaign.cashAfterTax : null, decisions: campaign.decisionLog ?? [] });
   } catch { return null; } // 손상된 수업 기록이 게임 진행 저장까지 막지 않는다.
   platform.saveLearning(row);
   return row;
@@ -3149,16 +3043,15 @@ brandHome.addEventListener("click", () => {
   const hasProgress = state.simulation || state.districtId;
   if (!hasProgress || window.confirm("현재 진행을 끝내고 첫 화면으로 돌아갈까요?")) resetGame();
 });
+// 1·2·3 = 키친·홀·입구, 0 = 자동. 버튼과 같은 동작을 그대로 누른다. (스페이스 = 쉬기/복귀는 별도 핸들러)
 window.addEventListener("keydown", (event) => {
-  if (state.view !== "operations" || !state.simulation || document.querySelector("dialog[open]")) return;
+  if (state.view !== "operations" || !state.simulation || state.simulation.activeDilemma || document.querySelector("dialog[open]")) return;
+  if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]")) return;
   const station = OWNER_STATIONS.find((item) => item.key === event.key);
-  if (station && !state.simulation.activeDilemma && !state.arcadeOpen) {
-    event.preventDefault();
-    const result = state.simulation.moveOwner(station.id);
-    if (result.ok) { state.pendingArcade = null; sounds.good(); } else toast(result.reason);
-    return;
-  }
-  // 스페이스는 출근/쉬기 전용(별도 핸들러). 일시정지는 Ⅱ 버튼 클릭으로만.
+  const button = station ? screen.querySelector(`[data-station="${station.id}"]`) : event.key === "0" ? screen.querySelector("#station-auto") : null;
+  if (!button) return;
+  event.preventDefault();
+  button.click();
 });
 
 // 플랫폼(로컬 또는 Hive) 세션을 연다. 실패해도 게임 진행에는 영향이 없다.

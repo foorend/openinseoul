@@ -1291,7 +1291,7 @@ const REGISTRY = {
   equipment: EQUIPMENT_ART,
 };
 
-import { artReady, coverDraw } from "./art.js?release=20261015b";
+import { artReady, coverDraw } from "./art.js?release=20261016a";
 
 export function drawIllustration(ctx, w, h, kind, id, time, extra) {
   ctx.clearRect(0, 0, w, h);

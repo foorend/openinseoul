@@ -1,5 +1,5 @@
-import { DATA_VERSION, DISTRICTS, FORMATS } from "./data.js?release=20261015b";
-import { SOURCES } from "./sources.js?release=20261015b";
+import { DATA_VERSION, DISTRICTS, FORMATS } from "./data.js?release=20261016a";
+import { SOURCES } from "./sources.js?release=20261016a";
 
 export const QUESTIONS = [
   { text: "게임의 보증금·집기 취득은 월 비용과 어떻게 다를까요?", options: ["현금은 줄지만 전액을 월 영업비용으로 다시 빼지 않는다", "현금과 영업이익을 매달 같은 금액만큼 뺀다", "둘 다 아무 영향이 없다"], answer: 0 },
@@ -22,12 +22,17 @@ export function validateLearning(row) {
   const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
   const finite = (value, min, max) => typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
   if (row?.schema !== 1 || row.version !== DATA_VERSION || !uuid.test(row.runId) || !uuid.test(row.participantId) || typeof row.classCode !== "string" || !["profit", "hours"].includes(row.goal) || !DISTRICTS.some((item) => item.id === row.district) || !FORMATS.some((item) => item.id === row.format) || row.startingCapital !== 15000 || !finite(row.months, 0, 12) || !Number.isInteger(row.months) || typeof row.completed !== "boolean" || (row.completed && row.months !== 12) || !finite(row.updatedAt, 0, 1e15) || !finite(row.ownerHours, 0, 20000) || !finite(row.comparisons, 0, 10000) || !Number.isInteger(row.comparisons) || !Array.isArray(row.sources) || row.sources.length > SOURCES.length + 1 || row.sources.some((id) => !["dictionary", ...SOURCES.map((source) => source.id)].includes(id)) || (row.completed && (!finite(row.netProfit, -1e9, 1e9) || !finite(row.hourlyWon, -1e9, 1e9) || !finite(row.cash, -1e9, 1e9)))) throw new Error("지원하지 않거나 손상된 교육 결과입니다");
+  // 영업한 날마다 내린 결정과 결과 — 이전 버전 기록에는 없으므로 빈 배열로 읽는다.
+  const decisions = row.decisions ?? [];
+  if (!Array.isArray(decisions) || decisions.length > 40 || decisions.some((day) => !Number.isInteger(day?.month) || day.month < 1 || day.month > 12 || !Number.isInteger(day.day) || day.day < 1 || day.day > 7
+    || !Array.isArray(day.decisions) || day.decisions.length > 30 || day.decisions.some((text) => typeof text !== "string" || text.length > 80) || !finite(day.profitWon, -1e10, 1e10) || !finite(day.ownerHours, 0, 24))) throw new Error("지원하지 않거나 손상된 교육 결과입니다");
   const quiz = (value) => value == null ? null : scoreQuiz(value.answers, value.confidence);
   return { schema: 1, version: row.version, runId: row.runId, participantId: row.participantId, classCode: classCode(row.classCode), goal: row.goal,
     district: row.district, format: row.format, startingCapital: 15000, months: row.months, completed: row.completed, updatedAt: row.updatedAt,
     ownerHours: row.ownerHours, comparisons: row.comparisons, sources: [...new Set(row.sources)], pre: quiz(row.pre), post: quiz(row.post),
     netProfit: row.completed ? row.netProfit : null, hourlyWon: row.completed ? row.hourlyWon : null, cash: row.completed ? row.cash : null,
-    units: { startingCapital: "만원", netProfit: "만원", cash: "만원", hourlyWon: "원/시간", ownerHours: "시간" } };
+    decisions: decisions.map((day) => ({ month: day.month, day: day.day, decisions: [...day.decisions], profitWon: day.profitWon, ownerHours: day.ownerHours })),
+    units: { startingCapital: "만원", netProfit: "만원", cash: "만원", hourlyWon: "원/시간", ownerHours: "시간", decisions: "영업일별 결정(시각+내용) · profitWon 원 · ownerHours 시간" } };
 }
 
 export function mergeLearning(existing, incoming) {

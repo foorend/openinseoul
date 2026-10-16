@@ -267,43 +267,20 @@ test("a month extrapolates from the two played days and adds monthly-only costs"
   assert.ok(summary.profit < naive, "월 단위로 보면 하루 장사 감각보다 항상 적게 남는다");
 });
 
-test("flyer minigame hooks — walk-ins, random reviewers, jinsang, troll lockout", () => {
+test("live ledger starts at the fixed costs and closes on the reported profit", () => {
   const simulation = new RestaurantSimulation(configuration());
   simulation.startDay(1);
+  const opening = simulation.ledger();
+  assert.equal(opening.profit, -(opening.labor + opening.rent), "문을 열면 월세·인건비만큼 적자에서 시작한다");
+  simulation.toggleOwnerWork(true);
+  simulation.ownerStation = "bar";
+  simulation.stationArrivesAt = simulation.gameMinute;
+  simulation.machine.wear = 0.6;
   simulation.setSpeed(1);
-  for (let i = 0; i < 40; i += 1) simulation.update(0.2);
-  assert.equal(simulation.finished, false, "아직 영업 중이어야 한다");
-
-  // 전단지로 잡은 행인은 반드시 들어오는 손님이 된다
-  const before = simulation.activeAgents.length;
-  const agent = simulation.injectWalkin("maybe");
-  assert.ok(agent && agent.forcedEntry, "미니게임 손님은 강제 입장 플래그를 단다");
-  assert.equal(simulation.activeAgents.length, before + 1);
-
-  // 리뷰어는 복불복 — 좋은 리뷰와 나쁜 리뷰가 각각 카운트에 쌓인다
-  for (let i = 0; i < 30; i += 1) simulation.injectWalkin("reviewer");
-  const good = simulation.pendingGoodReviews ?? 0;
-  const bad = simulation.pendingBadReviews;
-  assert.equal(good + bad, 30, "리뷰어 30명은 전부 어느 한쪽으로 판정된다");
-  assert.ok(good > 0 && bad > 0, `복불복이 실제로 갈린다 (호평 ${good} · 혹평 ${bad})`);
-  simulation.startDay(2);
-  const expected = Math.min(1.2, Math.max(0.5, 1 - 0.01 * bad + 0.01 * good));
-  assert.ok(Math.abs(simulation.reviewPenalty - expected) < 1e-9, "다음 날 수요에 ±1%/명으로 반영된다");
-
-  // 진상 워크인 — 돈은 안 내고 평판과 스트레스만 갉는다
-  const reputationBefore = simulation.reputation;
-  const stressBefore = simulation.ownerStress;
-  const result = simulation.jinsangWalkin();
-  assert.ok(result.ok);
-  assert.ok(simulation.reputation < reputationBefore, "평판이 긁힌다");
-  assert.ok(simulation.ownerStress > stressBefore, "사장 스트레스가 오른다");
-
-  // 시비꾼 API(진상 딜레마 등에서 재사용): 30분 입구 봉쇄
-  simulation.setSpeed(1);
-  for (let i = 0; i < 60; i += 1) simulation.update(0.2);
-  const troll = simulation.trollEncounter();
-  assert.ok(troll.ok);
-  assert.ok(simulation.doorBlockedUntil >= simulation.gameMinute + 30, "30분간 입구가 막힌다");
+  simulation.update(1);
+  assert.ok(simulation.machine.wear < 0.25, "키친에 선 사장은 머신을 바로 닦는다");
+  const report = simulation.runToEnd();
+  assert.ok(Math.abs(simulation.ledger().profit - report.metrics.profit) < 1e-9, "영업 중 장부와 마감 이익이 같은 공식이다");
 });
 test("jinsang customers haunt Gangnam hall shifts more than anywhere else", () => {
   // 같은 시드로 강남과 강동에서 사장을 홀에 세워 두고 30일을 돌려 출몰 횟수를 센다

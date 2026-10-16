@@ -1,6 +1,6 @@
-import { clamp, phaseAt } from "./sim.js?release=20261015b";
-import { figure, glowDot, grain, lightCone, vignette } from "./visuals.js?release=20261015b";
-import { loadArt, artReady, drawBackplate, drawFigure, figureKeyFor, drawTableProp, coverDraw, ANCHOR } from "./art.js?release=20261015b";
+import { clamp, phaseAt } from "./sim.js?release=20261016a";
+import { figure, glowDot, grain, lightCone, vignette } from "./visuals.js?release=20261016a";
+import { loadArt, artReady, drawBackplate, drawFigure, figureKeyFor, drawTableProp, coverDraw, ANCHOR } from "./art.js?release=20261016a";
 
 loadArt();
 
@@ -591,8 +591,8 @@ export class GameScene {
   }
 
   // 클릭 액션의 즉각 피드백 텍스트
-  addFloater(x, y, text, tone = "good") {
-    this.floaters.push({ x, y, text, tone, life: 1.6 });
+  addFloater(x, y, text, tone = "good", size = 16) {
+    this.floaters.push({ x, y, text, tone, size, life: size > 16 ? 2.4 : 1.6 });
   }
 
   // 캔버스 클릭 → 손님 또는 테이블
@@ -661,6 +661,9 @@ export class GameScene {
   drawArtScene(ctx, snapshot, light) {
     drawBackplate(ctx);
     const A = ANCHOR;
+    // 돈이 뜨는 자리 — 계산대(판매·재료)와 출입문(월세·놓친 손님)
+    this.registerSpot = { x: A.machineX - 30, y: A.counterY - 40 };
+    this.doorSpot = { x: (A.doorLeft + A.doorRight) / 2, y: A.doorTop + 90 };
 
     // 테이블 — 시뮬 테이블 수만큼 홀 바닥에 스탬프
     const simTables = snapshot.tables ?? [];
@@ -935,12 +938,12 @@ export class GameScene {
       const alpha = Math.min(1, floater.life);
       ctx.save();
       ctx.globalAlpha = alpha;
-      ctx.font = "800 16px 'Noto Sans KR', Arial, sans-serif";
+      ctx.font = `800 ${floater.size}px 'Noto Sans KR', Arial, sans-serif`;
       ctx.textAlign = "center";
       ctx.lineWidth = 4;
       ctx.strokeStyle = "rgba(16,16,14,.85)";
       ctx.strokeText(floater.text, floater.x, floater.y);
-      ctx.fillStyle = floater.tone === "bad" ? "#ff9d8a" : floater.tone === "neutral" ? "#f2ead8" : "#9df0bd";
+      ctx.fillStyle = { bad: "#ff9d8a", neutral: "#f2ead8", gold: "#f0c674" }[floater.tone] ?? "#9df0bd";
       ctx.fillText(floater.text, floater.x, floater.y);
       ctx.restore();
     }
@@ -1239,6 +1242,7 @@ export class GameScene {
     ctx.fillStyle = "#87593f";
     ctx.fillRect(passX - 22, interiorY + interiorH * 0.35 - 8, 44, 10);
     this.registerSpot = { x: passX, y: interiorY + interiorH * 0.32 };
+    this.doorSpot = { x: x + w - 40, y: interiorY + interiorH * 0.4 };
 
     // ── 홀 or 배달 존 (오른쪽) ──
     const hallX = passX + 8;
@@ -1726,429 +1730,3 @@ export class GameScene {
   }
 }
 
-// ─── 매장 내부 캠 (왼쪽 패널) ────────────────────────────────
-// 바 안쪽을 크게 보여주고, 머신·쇼케이스·싱크를 직접 클릭해 개입한다.
-
-const IW = 420;
-const IH = 560;
-
-export class InteriorScene {
-  constructor(canvas, { format, menus, restaurantName }) {
-    this.canvas = canvas;
-    this.format = format;
-    this.menus = menus;
-    this.restaurantName = restaurantName;
-    this.time = 0;
-    this.view = {};
-    this.floaters = [];
-    this.hotspots = [];
-    this.coinBursts = [];
-  }
-
-  addFloater(text, tone = "good", x = IW * 0.5, y = IH * 0.42) {
-    this.floaters.push({ x, y, text, tone, life: 1.7 });
-  }
-
-  coinBurst() {
-    for (let i = 0; i < 6; i += 1) {
-      this.coinBursts.push({
-        x: IW * 0.62 + (Math.random() - 0.5) * 20,
-        y: IH * 0.46,
-        vx: (Math.random() - 0.5) * 60,
-        vy: -90 - Math.random() * 70,
-        life: 0.9,
-      });
-    }
-  }
-
-  pick(cssX, cssY) {
-    const { scale = 1, offsetX = 0, offsetY = 0 } = this.view;
-    const x = (cssX - offsetX) / scale;
-    const y = (cssY - offsetY) / scale;
-    for (const spot of this.hotspots) {
-      if (x >= spot.x && x <= spot.x + spot.w && y >= spot.y && y <= spot.y + spot.h) return spot.id;
-    }
-    return null;
-  }
-
-  draw(snapshot, deltaSeconds = 0.016) {
-    this.time += deltaSeconds;
-    const rect = this.canvas.getBoundingClientRect();
-    const dpr = 0.85; // 인테리어는 텍스트가 많아 도트를 촘촘하게
-    const width = Math.max(1, Math.floor(rect.width * dpr));
-    const height = Math.max(1, Math.floor(rect.height * dpr));
-    if (this.canvas.width !== width || this.canvas.height !== height) {
-      this.canvas.width = width;
-      this.canvas.height = height;
-    }
-    const ctx = this.canvas.getContext("2d");
-    const scale = Math.min(rect.width / IW, rect.height / IH);
-    const offsetX = (rect.width - IW * scale) / 2;
-    const offsetY = (rect.height - IH * scale) / 2;
-    ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offsetX, dpr * offsetY);
-    Object.assign(this.view, { scale, offsetX, offsetY });
-    ctx.clearRect(0, 0, IW, IH);
-    this.hotspots = [];
-
-    const light = lightingFor(snapshot.gameMinute);
-    const busyLanes = (snapshot.laneBusy ?? []).filter(Boolean).length;
-
-    // 벽과 바닥 — 따뜻한 목재 톤
-    ctx.fillStyle = mixColor("#f3e6ca", "#e8d3a8", light.night * 0.35);
-    ctx.fillRect(0, 0, IW, IH);
-    ctx.fillStyle = "#caa87a";
-    ctx.fillRect(0, IH - 90, IW, 90);
-    ctx.strokeStyle = "rgba(120,90,50,.3)";
-    ctx.lineWidth = 1;
-    for (let fx = 0; fx < IW; fx += 42) {
-      ctx.beginPath();
-      ctx.moveTo(fx, IH - 90);
-      ctx.lineTo(fx - 14, IH);
-      ctx.stroke();
-    }
-
-    // 선반 + 소품
-    ctx.fillStyle = "#8c6a48";
-    ctx.fillRect(24, 60, 170, 8);
-    for (let i = 0; i < 5; i += 1) {
-      ctx.fillStyle = ["#df7a30", "#f6f1e6", "#438a5b", "#f6f1e6", "#caa87a"][i];
-      roundedRect(ctx, 34 + i * 32, 38, 18, 22, 3);
-      ctx.fill();
-    }
-    // 메뉴 칠판
-    ctx.fillStyle = "#26281f";
-    roundedRect(ctx, 230, 26, 168, 66, 4);
-    ctx.fill();
-    ctx.fillStyle = "#f2ead8";
-    ctx.font = "700 12px 'Noto Sans KR', Arial, sans-serif";
-    ctx.textAlign = "left";
-    this.menus.slice(0, 3).forEach((menu, index) => {
-      ctx.fillText(`${menu.name}  ₩${Math.round(menu.price * 10000).toLocaleString("ko-KR")}`, 242, 48 + index * 17);
-    });
-
-    // 주문 티켓 레일 + 진행 바
-    const queueing = snapshot.agents.filter((agent) => agent.state === "queueing" && !agent.willAbandon).slice(0, 5);
-    ctx.fillStyle = "#514f47";
-    ctx.fillRect(20, 112, IW - 40, 5);
-    queueing.forEach((agent, index) => {
-      const tx = 28 + index * 76;
-      const progress = clamp((snapshot.gameMinute - agent.stateStart) / Math.max(0.01, agent.stateUntil - agent.stateStart));
-      ctx.fillStyle = "#fff8e8";
-      roundedRect(ctx, tx, 118, 66, 40, 3);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(30,28,20,.4)";
-      ctx.strokeRect(tx, 118, 66, 40);
-      ctx.fillStyle = "#3c3a32";
-      ctx.font = "700 10.5px 'Noto Sans KR', Arial, sans-serif";
-      ctx.fillText(agent.menu?.name.slice(0, 6) ?? "주문", tx + 6, 132);
-      ctx.fillStyle = "#e5ddc8";
-      ctx.fillRect(tx + 6, 140, 54, 7);
-      ctx.fillStyle = progress > 0.8 ? "#1f7a4f" : "#f4511e";
-      ctx.fillRect(tx + 6, 140, 54 * progress, 7);
-    });
-    if (!queueing.length) {
-      ctx.fillStyle = "rgba(60,58,50,.5)";
-      ctx.font = "700 11px 'Noto Sans KR', Arial, sans-serif";
-      ctx.fillText("대기 주문 없음", 28, 140);
-    }
-
-    // 에스프레소 머신 — 마모에 따라 클릭 유도
-    const mx = 40;
-    const my = 210;
-    const wear = snapshot.machineWear ?? 0;
-    ctx.fillStyle = "#2e3033";
-    roundedRect(ctx, mx, my, 180, 86, 8);
-    ctx.fill();
-    ctx.fillStyle = "#43464a";
-    roundedRect(ctx, mx + 8, my - 16, 164, 22, 5);
-    ctx.fill();
-    // 그룹헤드 2개와 샷 추출
-    for (let g = 0; g < 2; g += 1) {
-      const gx = mx + 48 + g * 74;
-      ctx.fillStyle = "#1c1d1f";
-      ctx.fillRect(gx - 12, my + 30, 24, 14);
-      const pouring = g < busyLanes;
-      if (pouring) {
-        const flow = Math.abs(Math.sin(this.time * 7 + g));
-        ctx.strokeStyle = `rgba(140,84,38,${0.6 + flow * 0.3})`;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(gx, my + 44);
-        ctx.lineTo(gx, my + 62);
-        ctx.stroke();
-        ctx.fillStyle = "#f6f1e6";
-        roundedRect(ctx, gx - 9, my + 62, 18, 13, 3);
-        ctx.fill();
-        // 김
-        ctx.globalAlpha = 0.5 * flow;
-        ctx.fillStyle = "#fff";
-        ctx.beginPath();
-        ctx.arc(gx + 6, my + 52 - flow * 8, 4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-    }
-    // 스팀 완드
-    ctx.strokeStyle = "#9aa0a6";
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(mx + 168, my + 22);
-    ctx.lineTo(mx + 184, my + 52);
-    ctx.stroke();
-    if (busyLanes > 0) {
-      const puff = Math.abs(Math.sin(this.time * 5));
-      ctx.globalAlpha = 0.45 * puff;
-      ctx.fillStyle = "#fff";
-      ctx.beginPath();
-      ctx.arc(mx + 188, my + 44 - puff * 10, 6 + puff * 3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-    // 마모 게이지
-    const wearColor = wear > 0.65 ? "#c83b2f" : wear > 0.35 ? "#df7a30" : "#1f7a4f";
-    ctx.fillStyle = "#1c1d1f";
-    roundedRect(ctx, mx + 10, my + 8, 70, 12, 6);
-    ctx.fill();
-    ctx.fillStyle = wearColor;
-    roundedRect(ctx, mx + 12, my + 10, 66 * wear, 8, 4);
-    if (wear > 0.02) ctx.fill();
-    ctx.fillStyle = "#f2ead8";
-    ctx.font = "800 9px SFMono-Regular, monospace";
-    ctx.fillText("WEAR", mx + 84, my + 18);
-    if (wear > 0.65) {
-      const pulse = 1 + Math.sin(this.time * 5) * 0.1;
-      ctx.strokeStyle = "rgba(244,81,30,.9)";
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([6, 5]);
-      ctx.strokeRect(mx - 6 * pulse, my - 22 * pulse, 192 + 12 * pulse, 114 + 24 * pulse);
-      ctx.setLineDash([]);
-      ctx.fillStyle = "#c83b2f";
-      ctx.font = "800 11px 'Noto Sans KR', Arial, sans-serif";
-      ctx.fillText("청소 필요! 클릭", mx + 44, my + 110);
-    }
-    this.hotspots.push({ id: "machine", x: mx - 8, y: my - 24, w: 200, h: 130 });
-
-    // 지금 내리는 잔 — 진행 중인 음료가 하나씩 완성된다
-    const brewing = snapshot.agents
-      .filter((agent) => agent.state === "queueing" && !agent.willAbandon && agent.menu)
-      .slice(0, 3);
-    brewing.forEach((agent, index) => {
-      const bx = 40 + index * 62;
-      const by = 314;
-      const progress = clamp((snapshot.gameMinute - agent.stateStart) / Math.max(0.01, agent.stateUntil - agent.stateStart));
-      ctx.fillStyle = "rgba(20,16,13,.75)";
-      roundedRect(ctx, bx, by, 54, 46, 5);
-      ctx.fill();
-      // 잔 안에 커피가 차오른다
-      ctx.fillStyle = "#efe6d8";
-      roundedRect(ctx, bx + 16, by + 8, 22, 20, 3);
-      ctx.fill();
-      const fill = 18 * progress;
-      ctx.fillStyle = agent.menu.milk ? "#d8c39a" : "#5a3418";
-      ctx.fillRect(bx + 17, by + 27 - fill, 20, fill);
-      if (progress > 0.75) {
-        ctx.fillStyle = "#f0c674";
-        ctx.fillRect(bx + 17, by + 9 - 0, 20, 3);
-      }
-      ctx.fillStyle = "#9c8b7c";
-      ctx.font = "700 8px 'Noto Sans KR', Arial, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(agent.menu.name.slice(0, 5), bx + 27, by + 40);
-      ctx.textAlign = "left";
-    });
-
-    // 쇼케이스 — 재고가 그대로 보인다
-    const cx = 258;
-    const cy = 210;
-    const caseMenus = this.menus.filter((menu) => menu.caseItem);
-    ctx.fillStyle = "#8c6a48";
-    roundedRect(ctx, cx, cy - 14, 140, 116, 6);
-    ctx.fill();
-    ctx.fillStyle = "rgba(214,232,238,.55)";
-    roundedRect(ctx, cx + 6, cy - 8, 128, 96, 4);
-    ctx.fill();
-    if (caseMenus.length) {
-      caseMenus.forEach((menu, row) => {
-        const stock = snapshot.caseStock?.[menu.id] ?? 0;
-        const sy = cy + 8 + row * 30;
-        ctx.fillStyle = "#5f4433";
-        ctx.fillRect(cx + 10, sy + 16, 120, 3);
-        const show = Math.min(6, stock);
-        for (let i = 0; i < show; i += 1) {
-          ctx.fillStyle = menu.id === "cheesecake" ? "#f3d98c" : menu.id === "saltbread" ? "#d9a35c" : "#c98a4b";
-          ctx.beginPath();
-          ctx.ellipse(cx + 20 + i * 18, sy + 10, 8, 6, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        if (stock <= 0) {
-          ctx.fillStyle = "#c83b2f";
-          ctx.font = "800 10px 'Noto Sans KR', Arial, sans-serif";
-          ctx.fillText("SOLD OUT — 클릭해 보충", cx + 12, sy + 12);
-        } else {
-          ctx.fillStyle = "#3c3a32";
-          ctx.font = "800 9px SFMono-Regular, monospace";
-          ctx.fillText(`×${stock}`, cx + 112, sy + 12);
-        }
-      });
-      if (snapshot.pendingRestock) {
-        const remain = Math.max(0, snapshot.pendingRestock.readyAt - snapshot.gameMinute);
-        ctx.fillStyle = "#df7a30";
-        ctx.font = "800 10px 'Noto Sans KR', Arial, sans-serif";
-        ctx.fillText(`준비 중… ${Math.ceil(remain)}분`, cx + 14, cy + 96);
-      }
-      this.hotspots.push({ id: "case", x: cx, y: cy - 14, w: 140, h: 120 });
-    } else {
-      ctx.fillStyle = "rgba(60,58,50,.5)";
-      ctx.font = "700 10.5px 'Noto Sans KR', Arial, sans-serif";
-      ctx.fillText("디저트 메뉴 없음", cx + 24, cy + 40);
-    }
-
-    // 카운터 + 포스기 + 쿠폰 도장통
-    ctx.fillStyle = "#6d4a36";
-    ctx.fillRect(0, 330, IW, 26);
-    ctx.fillStyle = "#5a3c2b";
-    ctx.fillRect(0, 356, IW, 12);
-    ctx.fillStyle = "#26281f";
-    roundedRect(ctx, 178, 296, 52, 36, 4);
-    ctx.fill();
-    ctx.fillStyle = "#72f6b8";
-    ctx.fillRect(184, 302, 40, 18);
-    // 쿠폰 도장통 — 오늘 생긴 단골만큼 카드가 쌓인다
-    const regulars = snapshot.metrics?.repeatIntent ?? 0;
-    ctx.fillStyle = "rgba(214,232,238,.7)";
-    roundedRect(ctx, 352, 296, 34, 36, 4);
-    ctx.fill();
-    const cardLevel = Math.min(26, regulars * 0.9);
-    ctx.fillStyle = "#e8b34b";
-    ctx.fillRect(354, 330 - cardLevel, 30, cardLevel);
-    ctx.fillStyle = "#3c3a32";
-    ctx.font = "800 8.5px SFMono-Regular, monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("단골", 369, 292);
-    ctx.textAlign = "left";
-
-    // 주방 작업대 — 손이 멈추지 않는 자리
-    const prepX = 40;
-    const prepY = 384;
-    ctx.fillStyle = "#43453f";
-    roundedRect(ctx, prepX, prepY, 120, 46, 5);
-    ctx.fill();
-    ctx.fillStyle = "#2c2e2a";
-    ctx.fillRect(prepX + 10, prepY + 8, 100, 30);
-    for (let i = 0; i < 4; i += 1) {
-      ctx.fillStyle = ["#d9a45c", "#efe6d8", "#c98a4b", "#8c6f4e"][i];
-      ctx.beginPath();
-      ctx.ellipse(prepX + 26 + i * 24, prepY + 4, 10, 5, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.fillStyle = "rgba(156,139,124,.8)";
-    ctx.font = "800 10px 'Noto Sans KR', Arial, sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText(this.format.bakes ? "베이커 작업대" : "프렙 작업대", prepX + 4, prepY + 62);
-
-    // 바리스타 — 손님이 없어도 잔을 닦고 세팅한다. 멈춰 있지 않는다.
-    const staffColor = busyLanes > 0 ? "#e8e2d4" : "#d9d3c4";
-    drawCharacter(ctx, { randomKey: 3, customer: { color: staffColor, id: "staff" }, facing: 1 }, 118, 322, { scale: 1.12, walking: 1, time: this.time * (busyLanes ? 1.9 : 0.9) });
-    ctx.fillStyle = "#f6f1e6";
-    roundedRect(ctx, 110, 238, 16, 11, 3);
-    ctx.fill();
-
-    // 베이커 — 작업대에서 계속 반죽을 민다
-    if (this.format.bakes) {
-      const knead = Math.sin(this.time * 3.4) * 5;
-      drawCharacter(ctx, { randomKey: 11, customer: { color: "#ede4d2", id: "baker" }, facing: 1 }, 74 + knead, 382, { scale: 1.0, walking: 1, time: this.time * 2.6 });
-      ctx.fillStyle = "#f6f1e6";
-      roundedRect(ctx, 66 + knead, 308, 15, 10, 3);
-      ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,.22)";
-      ctx.beginPath();
-      ctx.ellipse(96 + knead, 374, 13, 5, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // 너무 바쁘면 홀 알바가 바 안쪽으로 들어와 같이 뽑는다
-    if (busyLanes >= 2 && (snapshot.hallStaff ?? 0) > 0) {
-      drawCharacter(ctx, { randomKey: 21, customer: { color: "#8c6f4e", id: "staff" }, facing: -1 }, 178, 322, { scale: 1.05, walking: 1, time: this.time * 2.1 });
-      ctx.fillStyle = "rgba(217,164,65,.9)";
-      ctx.font = "800 9px 'Noto Sans KR', Arial, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("홀 지원", 178, 244);
-      ctx.textAlign = "left";
-    }
-
-    // 사장이 키친에 서 있으면 직접 샷을 내린다
-    if (snapshot.stationActive === "bar") {
-      drawCharacter(ctx, { randomKey: 77, customer: { color: snapshot.ownerLook?.color ?? "#2c2620", id: "owner" }, facing: -1 }, 258, 322, { scale: 1.16, walking: 1, time: this.time * 2.2, hair: snapshot.ownerLook?.hair });
-      ctx.fillStyle = "#d9a441";
-      ctx.beginPath();
-      ctx.arc(258, 232, 9, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#14100d";
-      ctx.font = "800 9px 'Noto Sans KR', Arial, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("사장", 258, 235);
-      ctx.textAlign = "left";
-      for (let i = 0; i < 3; i += 1) {
-        const p = (this.time * 1.1 + i * 0.33) % 1;
-        ctx.globalAlpha = (1 - p) * 0.42;
-        ctx.fillStyle = "#fff";
-        ctx.beginPath();
-        ctx.arc(274 + Math.sin(p * 7) * 5, 292 - p * 40, 4 + p * 8, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    // 코인 버스트
-    this.coinBursts = this.coinBursts.filter((coin) => coin.life > 0);
-    for (const coin of this.coinBursts) {
-      coin.life -= deltaSeconds;
-      coin.x += coin.vx * deltaSeconds;
-      coin.y += coin.vy * deltaSeconds;
-      coin.vy += 320 * deltaSeconds;
-      ctx.globalAlpha = Math.max(0, coin.life);
-      ctx.fillStyle = "#e8b34b";
-      ctx.beginPath();
-      ctx.arc(coin.x, coin.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "#a87b1e";
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-
-    // 후처리 — 바 조명의 번짐과 질감
-    ctx.save();
-    ctx.globalCompositeOperation = "screen";
-    glowDot(ctx, IW * 0.34, 236, 190, "#F0C674", 0.16);
-    if (busyLanes > 0) glowDot(ctx, IW * 0.28, 262, 120, "#D9A441", 0.2);
-    ctx.restore();
-    ctx.save();
-    ctx.globalCompositeOperation = "overlay";
-    const warm = ctx.createLinearGradient(0, 0, 0, IH);
-    warm.addColorStop(0, "rgba(255, 205, 130, 0.14)");
-    warm.addColorStop(1, "rgba(40, 20, 10, 0.2)");
-    ctx.fillStyle = warm;
-    ctx.fillRect(0, 0, IW, IH);
-    ctx.restore();
-    vignette(ctx, IW, IH, 0.4);
-    grain(ctx, IW, IH, 0.05);
-
-    // 플로터
-    this.floaters = this.floaters.filter((floater) => floater.life > 0);
-    for (const floater of this.floaters) {
-      floater.life -= deltaSeconds;
-      floater.y -= deltaSeconds * 30;
-      ctx.save();
-      ctx.globalAlpha = Math.min(1, floater.life);
-      ctx.font = "800 17px 'Noto Sans KR', Arial, sans-serif";
-      ctx.textAlign = "center";
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = "rgba(16,16,14,.8)";
-      ctx.strokeText(floater.text, floater.x, floater.y);
-      ctx.fillStyle = floater.tone === "bad" ? "#ff9d8a" : floater.tone === "neutral" ? "#f2ead8" : "#78e0a0";
-      ctx.fillText(floater.text, floater.x, floater.y);
-      ctx.restore();
-    }
-  }
-}

@@ -23,7 +23,7 @@ import {
   REGULAR_NAMES,
   WEATHER,
   getById,
-} from "./data.js?release=20261015b";
+} from "./data.js?release=20261016a";
 
 const FORMAT_FIT = {
   solo_cafe: { office_worker: 1, cafe_studier: 0.7, mz_hotple: 0.55, local_resident: 0.82, delivery_customer: 0.6 },
@@ -394,8 +394,7 @@ export class RestaurantSimulation {
     this.lastRepeatIntent = 0;
     this.chargedDay = null;
     this.chargedAmount = 0;
-    // 수동이 기본 — 미니게임을 직접 뛰는 것이 이 게임의 본체다.
-    // 자동(🤖)은 "내 선택의 결과를 빨리 보고 싶을 때" 켜는 모드로, 켜면 4배속 리포트 직행.
+    // 자동(🤖)이면 사장이 병목을 보고 스스로 자리를 옮긴다. 플레이어가 자리를 찍으면 꺼진다.
     this.autoOwner = false;
     this.autoNextDecision = 0;
   }
@@ -470,99 +469,6 @@ export class RestaurantSimulation {
       this.emit("사장이 쉬러 갑니다. 남은 시간은 아껴둡니다.", "neutral");
     }
     return { ok: true, working: want };
-  }
-
-  // ── 전단지 미니게임이 시뮬레이션과 만나는 지점 ─────────────
-  // 미니게임에서 잡은 사람은 진짜 손님으로 걸어 들어온다.
-  injectWalkin(kind = "maybe") {
-    if (this.finished) return null;
-    const pool = CUSTOMERS.filter((c) => c.id !== "delivery_customer");
-    const weights = pool.map((c) => this.district.mix[c.id] ?? 1);
-    const pick = pickWeighted(pool, weights, keyedRandom(this.seed, this.gameMinute, this.flyerSeq += 1, "inject"));
-    const hour = Math.floor(this.gameMinute / 60);
-    this.spawnAgent({
-      id: `F${this.day}-${this.flyerSeq}`,
-      day: this.day,
-      hour,
-      customerId: pick.id,
-      spawnMinute: this.gameMinute,
-    });
-    const agent = this.activeAgents.at(-1);
-    // 전단지를 받고 오는 손님은 반드시 들어온다
-    agent.flyered = true;
-    agent.forcedEntry = true;
-    if (kind === "reviewer") {
-      // 리뷰어는 복불복 — 잘 걸리면 입소문, 잘못 걸리면 별점 테러
-      const lucky = keyedRandom(this.seed, this.day, this.flyerSeq, "review") < 0.5;
-      if (lucky) this.pendingGoodReviews = (this.pendingGoodReviews ?? 0) + 1;
-      else this.pendingBadReviews += 1;
-      agent.badReviewer = !lucky;
-      agent.reviewLucky = lucky;
-    }
-    return agent;
-  }
-
-  // 진상에게 전단지를 쥐여주면 들어와서 돈은 안 내고 짜증만 내고 간다.
-  jinsangWalkin() {
-    if (this.finished) return { ok: false };
-    this.reputation = Math.max(5, this.reputation - 1.2);
-    this.ownerStress = Math.min(100, this.ownerStress + 4);
-    const victim = this.activeAgents.find((agent) => !agent.done && (agent.state === "eating" || agent.state === "queueing"));
-    if (victim) {
-      victim.serviceBonus = (victim.serviceBonus ?? 0) - 0.06;
-      victim.bubble = "옆자리 너무 시끄러워요";
-      victim.bubbleTone = "bad";
-    }
-    this.emit("전단지를 받은 진상이 들어와 소란을 피우고 갔습니다. 돈은 한 푼도 안 냈습니다.", "bad");
-    return { ok: true };
-  }
-
-  // 키친 러시에서 완성한 잔 — 가장 오래 기다린 손님이 바로 받는다.
-  expressServe() {
-    const waiting = this.activeAgents
-      .filter((agent) => !agent.done && agent.state === "queueing")
-      .sort((a, b) => a.stateStart - b.stateStart)[0];
-    if (!waiting) return { ok: false };
-    waiting.stateUntil = this.gameMinute;
-    return { ok: true };
-  }
-
-  // 홀 서빙에서 치운 테이블 — 즉시 비워진다.
-  expressClean(tableId) {
-    const table = this.tables[tableId];
-    if (!table || table.state !== "dirty") return { ok: false };
-    table.state = "free";
-    table.cleanAt = 0;
-    table.arcadeTaken = false;
-    this.metrics.ownerActions.cleaned += 1;
-    return { ok: true };
-  }
-
-  // 홀 서빙의 주문서·서빙 — 식사 중인 손님 하나의 경험이 좋아진다.
-  hallDelight() {
-    const diner = this.activeAgents.find((agent) => !agent.done && agent.state === "eating" && !(agent.serviceBonus > 0.03));
-    if (diner) diner.serviceBonus = (diner.serviceBonus ?? 0) + 0.04;
-    return { ok: true };
-  }
-
-  // 시비꾼과 부딪히면 30분간 아무도 들어오지 않고, 있던 손님도 나간다.
-  trollEncounter() {
-    if (this.finished) return { ok: false };
-    const base = Math.max(this.gameMinute, this.doorBlockedUntil ?? 0);
-    this.doorBlockedUntil = base + 30;
-    let scared = 0;
-    for (const agent of this.activeAgents) {
-      if (agent.done) continue;
-      if (agent.state === "queueing" || agent.state === "eating") {
-        agent.bubble = "무서워서 나가요";
-        agent.bubbleTone = "bad";
-        agent.state = "leaving";
-        agent.stateUntil = this.gameMinute + 4;
-        scared += 1;
-      }
-    }
-    this.emit(`입구에서 시비가 붙었습니다. 30분간 손님이 끊기고, ${scared}명이 자리를 떴습니다.`, "bad");
-    return { ok: true, scared, blockedUntil: this.doorBlockedUntil };
   }
 
   // 스트레스가 쌓일수록 사장 보너스가 줄어든다. 50까지는 멀쩡, 100이면 보너스 0.
@@ -912,7 +818,7 @@ export class RestaurantSimulation {
   }
 
   setSpeed(speed) {
-    this.speed = [0, 1, 2, 4].includes(speed) ? speed : 1;
+    this.speed = [0, 1, 2, 4, 8].includes(speed) ? speed : 1;
     this.running = this.speed > 0;
   }
 
@@ -1089,7 +995,7 @@ export class RestaurantSimulation {
       const queueCount = this.activeAgents.filter((agent) => agent.state === "queueing" && agent.channel === "dine").length;
       if (queueCount >= 1) {
         this.milestones.add("dirty-warning");
-        this.emit("치울 손이 부족합니다. 테이블을 직접 클릭해 치우거나 일일알바를 부르세요.", "bad");
+        this.emit("치울 손이 부족합니다. 사장을 홀에 세우거나 테이블을 직접 눌러 치우세요.", "bad");
       }
     }
   }
@@ -1386,6 +1292,11 @@ export class RestaurantSimulation {
   // 직원이 아예 없는 1인 카페에는 대신해 줄 사람이 없다 — 그게 1인 카페의 값이다.
   managerUpkeep() {
     if (this.finished) return;
+    // 키친에 선 사장은 손이 비는 대로 머신을 닦고 빈 쇼케이스를 채운다 — 매니저보다 빠르다.
+    if (this.atStation("bar") && !this.ownerBusy()) {
+      if (this.machine.wear >= 0.25) this.cleanMachine();
+      else if (!this.pendingRestock && this.menus.some((menu) => menu.caseItem && (this.caseStock[menu.id] ?? 0) <= 0)) this.restockCase();
+    }
     // 베이커는 아침에만 굽지 않는다 — 재고가 얇아지면 오븐 사이클이 돈다.
     // 베이커를 고용해 직접 굽는 가게만 누리는 자동화다.
     if (this.format.bakes && this.supplyMode.id === "bake" && !this.pendingRestock
@@ -1683,8 +1594,7 @@ export class RestaurantSimulation {
         * deliverySurge * (this.monthEffects.awarenessHard ? 0.72 : 1),
       0.05, 0.97,
     );
-    // 미니게임에서 전단지를 직접 쥐여준 손님은 무조건 들어온다
-    if (!agent.forcedEntry && keyedRandom(this.seed, agent.id, "aware") > probability) {
+    if (keyedRandom(this.seed, agent.id, "aware") > probability) {
       this.rejectAgent(agent, "awareness", FEEDBACK.no_interest, "neutral");
       return;
     }
@@ -2012,6 +1922,8 @@ export class RestaurantSimulation {
 
   rejectAgent(agent, reason, messages, tone) {
     this.metrics.losses[reason] = (this.metrics.losses[reason] ?? 0) + 1;
+    // 들어올 뻔한 손님을 놓친 순간은 화면에 바로 뜬다. 그냥 지나간 행인(인지)은 너무 많아 제외한다.
+    if (reason !== "awareness") this.pushVisual({ type: "lost", reason, agentId: agent.id });
     agent.primaryReason = reason;
     agent.outcome = `lost_${reason}`;
     if (reason === "wait" && this.dayMods.politeWait) tone = "neutral";
@@ -2023,6 +1935,17 @@ export class RestaurantSimulation {
     if (reason === "wait" && (this.metrics.losses.wait <= 3 || this.metrics.losses.wait % 7 === 0)) {
       this.emit(`${agent.customer.short}: “${agent.bubble}”`, "bad", agent.id);
     }
+  }
+
+  // 지금까지의 하루 장부. 마감 때 확정할 폐기·부가세 적립·공과금을 finishDay와 같은 공식으로 미리 잡는다.
+  ledger() {
+    const m = this.metrics;
+    const waste = this.finished ? m.wasteCost : this.dayMods.noWaste ? 0 : m.foodCost * this.getEffects().waste;
+    const tax = this.finished ? m.taxCost : m.revenue * GAME_CONFIG.taxRate;
+    const utility = this.finished ? m.utilityCost : m.revenue * GAME_CONFIG.utilityRate * (this.monthEffects.utility ?? 1);
+    const goods = m.foodCost + m.platformCost + waste;
+    const other = tax + utility + m.actionCost;
+    return { revenue: m.revenue, labor: m.laborCost, rent: m.rentCost, goods, other, profit: m.revenue - m.laborCost - m.rentCost - goods - other };
   }
 
   finishDay() {
