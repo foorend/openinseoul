@@ -22,8 +22,10 @@ import {
   STATION_MOVE_MINUTES,
   REGULAR_NAMES,
   WEATHER,
+  LOAN_ANNUAL_RATE,
+  MONTHLY_RATES,
   getById,
-} from "./data.js?release=20261016a";
+} from "./data.js?release=20261026a";
 
 const FORMAT_FIT = {
   solo_cafe: { office_worker: 1, cafe_studier: 0.7, mz_hotple: 0.55, local_resident: 0.82, delivery_customer: 0.6 },
@@ -70,6 +72,14 @@ export function hiredLaborCost(format, district, hourPlan, supplyMode, staffing,
   return (hires ?? format.hires)
     .filter((hire) => !(boughtIn && hire.role === "베이커"))
     .reduce((sum, hire) => sum + (district.hourlyWage * hire.wageMultiplier * hire.hours * scale * staffScale) / 10000, 0);
+}
+
+// 매출이 0원이어도 매달 나가는 돈 — 월세 + 직원 인건비(4대보험·퇴직 적립 포함) + 대출 이자 + 기장료.
+// 개업 전 화면에서 "운전자금으로 몇 달 버티나"를 계산할 때 쓴다.
+export function monthlyFixedCost({ format, district, hourPlan, supplyMode, staffing, loan = 0, annualKeeping = 0 }) {
+  const rent = (district.lease.monthlyRent * (format.pyeong ?? 12)) / 12;
+  const labor = hiredLaborCost(format, district, hourPlan, supplyMode, staffing) * 30 * (1 + MONTHLY_RATES.insurance + MONTHLY_RATES.severance);
+  return rent + labor + (loan * LOAN_ANNUAL_RATE) / 12 + annualKeeping / 12;
 }
 
 export function hasScheduledStaff(format, supplyMode, hires = format.hires) {

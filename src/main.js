@@ -12,10 +12,6 @@ import {
   STAFFING_PLANS,
   OWNER_LOOKS,
   OWNER_HAIRS,
-  OWNER_STAT_DEFS,
-  OWNER_STAT_POOL,
-  OWNER_STAT_MAX,
-  OWNER_STAT_MIN,
   CAPITAL_OPTIONS,
   EQUIPMENT_TIERS,
   RESEARCH_COST,
@@ -37,16 +33,16 @@ import {
   getById,
   PUBLIC_META,
   SEOUL_AVERAGE,
-} from "./data.js?release=20261016a";
-import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost, hourToClock } from "./sim.js?release=20261016a";
-import { GameScene, HeroScene } from "./scene.js?release=20261016a";
-import { mountIllustration } from "./visuals.js?release=20261016a";
-import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261016a";
-import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261016a";
-import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261016a";
-import { publicRows, sourceLine, sourceMarkup, survivalFor } from "./sources.js?release=20261016a";
-import { buildCoach, narrateCoach } from "./coach.js?release=20261016a";
-import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261016a";
+} from "./data.js?release=20261026a";
+import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost, hourToClock, monthlyFixedCost } from "./sim.js?release=20261026a";
+import { GameScene, HeroScene } from "./scene.js?release=20261026a";
+import { mountIllustration } from "./visuals.js?release=20261026a";
+import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261026a";
+import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261026a";
+import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261026a";
+import { publicRows, sourceLine, sourceMarkup, survivalFor } from "./sources.js?release=20261026a";
+import { buildCoach, narrateCoach } from "./coach.js?release=20261026a";
+import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261026a";
 
 const screen = document.querySelector("#screen");
 const topbarStatus = document.querySelector("#topbar-status");
@@ -242,7 +238,7 @@ function resetGame() {
     selectedActions: [],
     restaurantName: "온도커피",
     setupCash: GAME_CONFIG.startingCash,
-    ownerStats: { kind: 1, smart: 1, charm: 1 },
+    ownerStats: { kind: 3, smart: 3, charm: 3 },
     ownerLookId: "classic",
     ownerHairId: "black",
     capitalId: "standard",
@@ -332,7 +328,6 @@ function renderLanding() {
     sounds.click();
     resetGame();
     state.quickSetup = true;
-    state.ownerStats = { kind: 3, smart: 3, charm: 3 };
     state.beanTierId = "standard";
     state.equipmentId = "standard";
     state.ownerRoleId = "peak";
@@ -378,16 +373,12 @@ function sparklineSvg(values, color) {
   </svg>`;
 }
 
+// 사장 꾸미기·가게 이름 단계는 뺐다 — 이름은 첫날 아침 브리핑에서 정한다
 const WIZARD_STEPS = [
   {
-    id: "owner", label: "사장", kicker: "00 / WHO ARE YOU",
-    title: "이 가게, 누가", accent: "하는 겁니까.",
-    lede: "가게보다 사장이 먼저입니다. 어떤 사람인지, 얼마를 들고 시작하는지 — 이게 1년 내내 따라다닙니다.",
-  },
-  {
-    id: "name", label: "가게 이름", kicker: "00-2 / NAME THE PLACE",
-    title: "간판에 뭐라고", accent: "적을 겁니까.",
-    lede: "이 이름으로 1년을 삽니다. 리포트에도, 리뷰에도, 연말정산 서류에도 이 이름이 적힙니다.",
+    id: "capital", label: "자본·내 시간", kicker: "01 / YOUR LIMITS",
+    title: "얼마를 걸고,", accent: "얼마나 일할까요?",
+    lede: "돈과 사장의 시간은 서로 바꿀 수 있습니다. 먼저 감당할 범위를 정하세요.",
   },
   {
     id: "district", label: "상권", kicker: "01 / READ THE CITY",
@@ -421,11 +412,6 @@ const WIZARD_STEPS = [
     lede: "첫 번째로 고른 것이 시그니처입니다. 커피만으로는 객단가가 오르지 않고, 디저트만으로는 아침이 비어요.",
   },
   {
-    id: "role", label: "내 노동", kicker: "06 / YOUR OWN HOURS",
-    title: "당신은 하루", accent: "몇 시간 일할 겁니까.",
-    lede: "여기서 정하는 건 기본 근무시간입니다. 시간이 끝나도 원하면 얼마든지 더 일할 수 있어요 — 대신 초과 근무는 스트레스가 쌓이고, 그 시간까지 전부 연말에 사장 시급으로 청구됩니다.",
-  },
-  {
     id: "business", label: "사업자", kicker: "07 / REGISTER THE BUSINESS",
     title: "개인입니까,", accent: "법인입니까.",
     lede: "기본세율 비교 연습입니다. 일반 영리법인 2026 기본세율을 참고하며 실제 공제·소규모법인 별도 세율 등은 반영하지 않습니다.",
@@ -441,6 +427,9 @@ function setupCosts() {
   const lease = district && format
     ? Math.round((district.lease.deposit + district.lease.keyMoney + district.lease.fitout) * pyeongFactor)
     : 0;
+  // 보증금은 계약이 끝나면 돌아오지만 그동안 묶이고, 권리금·인테리어는 돌려받기 어렵다 — 따로 보여준다
+  const deposit = lease ? Math.round(district.lease.deposit * pyeongFactor) : 0;
+  const keyMoney = lease ? Math.round(district.lease.keyMoney * pyeongFactor) : 0;
   const formatCost = format?.setupCost ?? 0;
   // 준비 단계의 선택 하나하나가 여기로 모여 자본금에서 빠진다
   const equipment = getById(EQUIPMENT_TIERS, state.equipmentId);
@@ -456,11 +445,19 @@ function setupCosts() {
   const baseCapital = getById(CAPITAL_OPTIONS, state.capitalId)?.amount ?? GAME_CONFIG.startingCash;
   const loan = (state.loanUnits ?? 0) * LOAN_UNIT;
   const capital = baseCapital + loan;
+  const monthly = district && format ? monthlyFixedCost({
+    format, district, supplyMode, loan,
+    hourPlan: getById(HOUR_PLANS, state.hourPlanId ?? "standard"),
+    staffing: getById(STAFFING_PLANS, state.staffingId ?? "full"),
+    annualKeeping: getById(BUSINESS_TYPES, state.businessTypeId)?.annualKeeping ?? 0,
+  }) : 0;
   return {
     district, format, lease, formatCost, equipment, equipmentCost, beanStock, researchSpend,
-    total, capital, baseCapital, loan, remaining: capital - total,
+    total, capital, baseCapital, loan, remaining: capital - total, monthly,
     lines: [
-      lease ? { label: `${district.shortName} ${format.pyeong}평 보증금·권리금·인테리어`, value: lease } : null,
+      deposit ? { label: "보증금 · 계약 끝나면 반환", value: deposit } : null,
+      keyMoney ? { label: "권리금 · 회수 불확실", value: keyMoney } : null,
+      lease ? { label: "인테리어 · 회수 불가", value: lease - deposit - keyMoney } : null,
       format ? { label: `${format.name} 시설`, value: formatCost } : null,
       equipment ? { label: equipment.name, value: equipmentCost } : null,
       supplyGear ? { label: supplyMode.gearLabel, value: supplyGear } : null,
@@ -470,6 +467,19 @@ function setupCosts() {
       businessSetup ? { label: "사업자 설립", value: businessSetup } : null,
     ].filter(Boolean),
   };
+}
+
+// 매출이 하나도 없을 때 남는 운전자금으로 버티는 개월 수
+function runwayMonths(costs) {
+  return Math.max(0, costs.remaining / costs.monthly).toFixed(1);
+}
+
+function openingNote(costs) {
+  return `<div class="setup-note opening-note">
+    <strong>문 여는 날 통장 ${formatMoney(costs.remaining, true)} · 매달 고정비 ${formatMoney(costs.monthly, true)} → 매출이 하나도 없으면 ${runwayMonths(costs)}개월</strong>
+    <p>고정비는 월세 + 직원 인건비(4대보험·퇴직 적립 포함) + 대출 이자 + 기장료입니다. 보증금은 계약이 끝나야 돌아와서 운전자금에 넣지 않았습니다.</p>
+    <p>개업 전 행정: 위생교육 6시간(영업신고 전, 집합교육) → 보건증(건강진단결과서) → 구청 영업신고(위생교육필증·보건증·임대차계약서·신분증, 수수료 28,000원과 면허세) → 사업자등록. 비용은 '개업 행정·보험'에 묶었습니다.</p>
+  </div>`;
 }
 
 function restaurantNameFor(menu) {
@@ -489,28 +499,18 @@ function restaurantNameFor(menu) {
 
 // 베이커리를 고르지 않았다면 조달 스텝은 아예 나타나지 않는다.
 function activeSteps() {
-  if (state.quickSetup) return [
-    { id: "capital", label: "자본·내 시간", kicker: "01 / YOUR LIMITS", title: "얼마를 걸고,", accent: "얼마나 일할까요?", lede: "돈과 사장의 시간은 서로 바꿀 수 있습니다. 먼저 감당할 범위를 정하세요." },
-    WIZARD_STEPS.find((step) => step.id === "district"),
-    WIZARD_STEPS.find((step) => step.id === "format"),
-  ];
+  if (state.quickSetup) return WIZARD_STEPS.filter((step) => ["capital", "district", "format"].includes(step.id));
   return WIZARD_STEPS.filter((step) => !step.onlyBakery || state.formatId === "bakery_cafe");
 }
 
 function stepComplete(stepId) {
   if (stepId === "capital") return !!state.capitalId && !!state.ownerRoleId;
-  if (stepId === "owner") {
-    const spent = state.ownerStats.kind + state.ownerStats.smart + state.ownerStats.charm;
-    return !!state.ownerLookId && !!state.capitalId && spent === OWNER_STAT_POOL;
-  }
   if (stepId === "equipment") return !!state.equipmentId;
-  if (stepId === "name") return (state.restaurantName ?? "").trim().length >= 1;
   if (stepId === "supply") return !!state.supplyModeId;
   if (stepId === "district") return !!state.districtId;
   if (stepId === "format") return !!state.formatId;
   if (stepId === "bean") return !!state.beanTierId;
   if (stepId === "menu") return state.menuIds.length === GAME_CONFIG.maxMenuChoices;
-  if (stepId === "role") return !!state.ownerRoleId;
   if (stepId === "business") return !!state.businessTypeId;
   return false;
 }
@@ -657,73 +657,7 @@ function renderWizard() {
   if (step.id === "capital") {
     body = `<div class="quick-grid"><section><h2>시작 자본</h2><div class="capital-list">${CAPITAL_OPTIONS.map((option) => `<button class="repday ${state.capitalId === option.id ? "is-selected" : ""}" data-capital="${option.id}" type="button" ${state.learning && option.id !== "standard" ? "disabled" : ""}><b>${option.name} · ${formatMoney(option.amount)}</b><span>${option.description}</span></button>`).join("")}</div></section>
       <section><h2>사장 근무 예산</h2><div class="capital-list">${OWNER_ROLES.map((role) => `<button class="repday ${state.ownerRoleId === role.id ? "is-selected" : ""}" data-role="${role.id}" type="button"><b>하루 ${role.hoursPerDay}시간 · ${role.name}</b><span>${role.description}</span></button>`).join("")}</div></section></div>
-      <div class="setup-note"><p>표준 원두·신품 집기·개인사업자로 시작합니다. 메뉴는 매장 유형에 맞춰 제안하고, 다음 경영 계획에서 바꿀 수 있습니다. 성격 스탯은 모두 동일하게 3입니다.</p><label>플레이 방식 <select id="campaign-mode"><option value="chapters" ${state.campaignMode === "chapters" ? "selected" : ""}>3챕터 · 1/4/9월에 결정, 나머지 달 자동 정산</option><option value="full" ${state.campaignMode === "full" ? "selected" : ""}>12개월 · 매달 직접 결정</option></select></label></div>`;
-  } else if (step.id === "owner") {
-    const spent = state.ownerStats.kind + state.ownerStats.smart + state.ownerStats.charm;
-    const remaining = OWNER_STAT_POOL - spent;
-    body = `
-      <div class="owner-setup">
-        <div class="owner-col">
-          <span class="meta-label">스타일</span>
-          <div class="choice-grid cols-2 owner-looks">
-            ${OWNER_LOOKS.map((look) => `
-              <button class="choice-card is-tile ${state.ownerLookId === look.id ? "is-selected" : ""}" data-look="${look.id}" type="button">
-                <span class="owner-swatch" style="background:${look.color}">${look.icon}</span>
-                <h3>${look.name}</h3><p>${look.description}</p>
-              </button>`).join("")}
-          </div>
-        </div>
-        <div class="owner-col">
-          <span class="meta-label">헤어</span>
-          <div class="hair-row">
-            ${OWNER_HAIRS.map((hairOption) => `
-              <button class="hair-swatch ${state.ownerHairId === hairOption.id ? "is-selected" : ""}" data-hair="${hairOption.id}" type="button" title="${hairOption.name}">
-                <i style="background:${hairOption.color}"></i><span>${hairOption.name}</span>
-              </button>`).join("")}
-          </div>
-          <div class="stat-heading ${remaining === 0 ? "is-done" : ""}">
-            <strong>스탯</strong>
-            <span>남은 포인트</span>
-            <b class="${remaining === 0 ? "is-good" : "is-warn"}">${remaining}</b>
-          </div>
-          <div class="stat-rows">
-            ${OWNER_STAT_DEFS.map((stat) => {
-              const value = state.ownerStats[stat.id];
-              return `<div class="stat-row">
-                <div class="stat-name"><span>${stat.icon} ${stat.name}</span><p>${stat.description}</p></div>
-                <div class="stat-ctrl">
-                  <button class="stat-btn" data-stat="${stat.id}" data-delta="-1" type="button" ${value <= OWNER_STAT_MIN ? "disabled" : ""}>−</button>
-                  <span class="stat-dots">${Array.from({ length: OWNER_STAT_MAX }, (_, i) => `<i class="${i < value ? "on" : ""}"></i>`).join("")}</span>
-                  <button class="stat-btn" data-stat="${stat.id}" data-delta="1" type="button" ${value >= OWNER_STAT_MAX || remaining <= 0 ? "disabled" : ""}>＋</button>
-                </div>
-              </div>`;
-            }).join("")}
-          </div>
-        </div>
-        <div class="owner-col">
-          <span class="meta-label">시작 자본</span>
-          <div class="capital-list">
-            ${CAPITAL_OPTIONS.map((option) => `
-              <button class="repday ${state.capitalId === option.id ? "is-selected" : ""}" data-capital="${option.id}" type="button" ${state.learning && option.id !== "standard" ? "disabled" : ""}>
-                <b>${option.icon} ${option.name} — ${formatMoney(option.amount, true)}</b><span>${option.description}</span>
-              </button>`).join("")}
-          </div>
-        </div>
-      </div>`;
-  } else if (step.id === "name") {
-    const suggestions = ["온도커피", "구름상점", "소금빵연구소", "밀크앤샷", "슬로우드립", "바스크하우스"];
-    body = `
-      <div class="name-stage">
-        <div class="name-sign" aria-hidden="true">
-          <span class="name-sign-glow"></span>
-          <b id="name-preview">${escapeHtml(state.restaurantName || "간판이 비어 있습니다")}</b>
-        </div>
-        <input id="shop-name-input" class="name-input" type="text" maxlength="14" value="${escapeHtml(state.restaurantName ?? "")}" placeholder="가게 이름을 적어주세요" autocomplete="off" />
-        <div class="name-suggestions">
-          ${suggestions.map((name) => `<button class="name-chip" data-name-pick="${name}" type="button">${name}</button>`).join("")}
-        </div>
-        <p class="name-hint">직접 짓는 이름이 제일 오래갑니다. 언제든 아침 브리핑에서 바꿀 수 있어요.</p>
-      </div>`;
+      <div class="setup-note">${state.quickSetup ? "<p>표준 원두·신품 집기·개인사업자로 시작합니다. 메뉴는 매장 유형에 맞춰 제안하고, 다음 경영 계획에서 바꿀 수 있습니다.</p>" : ""}<label>플레이 방식 <select id="campaign-mode"><option value="chapters" ${state.campaignMode === "chapters" ? "selected" : ""}>3챕터 · 1/4/9월에 결정, 나머지 달 자동 정산</option><option value="full" ${state.campaignMode === "full" ? "selected" : ""}>12개월 · 매달 직접 결정</option></select></label></div>`;
   } else if (step.id === "district") {
     body = districtStepMarkup();
   } else if (step.id === "format") {
@@ -810,14 +744,10 @@ function renderWizard() {
       meta: [type.setupCost ? `설립 ${formatMoney(type.setupCost, true)}` : "설립비 없음", `기장 ${formatMoney(type.annualKeeping, true)}/년`],
       selected: state.businessTypeId === type.id,
     })).join("")}</div>`;
-  } else if (step.id === "role") {
-    body = `<div class="choice-grid cols-3">${OWNER_ROLES.map((role) => choiceCard({
-      id: role.id, attr: "role", name: role.name, sub: role.description,
-      art: { kind: "role", id: role.id },
-      meta: [`하루 ${role.hoursPerDay}시간`, role.capacityBonus > 1 ? "제조 +25%" : "제조 보너스 없음"],
-      selected: state.ownerRoleId === role.id,
-    })).join("")}</div>`;
   }
+
+  // 마지막 단계에서는 문 여는 날 통장으로 몇 달 버티는지와 개업 전 행정을 함께 보여준다
+  if (state.step === steps.length - 1 && costs.monthly) body += openingNote(costs);
 
   // 돈이 안 되면 문을 못 연다. 자본을 늘리거나 더 싼 선택으로 돌아가야 한다.
   const broke = costs.remaining < 0 && !!state.districtId && !!state.formatId;
@@ -835,6 +765,7 @@ function renderWizard() {
         </ol></details>
         <div class="capital-tracker ${budgetDelta < 0 ? "is-flash" : ""}">
           <div class="ct-now"><span class="ct-label">남는<br />운전자금</span><strong class="${costs.remaining < 300 ? "is-danger" : ""}">${formatMoney(costs.remaining)}</strong></div>
+          ${costs.monthly ? `<div class="ct-runway" title="월세 + 직원 인건비(4대보험·퇴직 적립 포함) + 대출 이자 + 기장료">매출 0원이면 <b>${runwayMonths(costs)}개월</b> 버팀 · 월 고정비 ${formatMoney(costs.monthly, true)}</div>` : ""}
           ${pageDiffLines.length ? `<div class="ct-diff">
             <em>이 페이지에서 ${formatMoney(state.pageStart.remaining)} →</em>
             ${pageDiffLines.map((line) => `<span class="ct-diff-line"><i>${line.label}</i><b>−${formatMoney(line.delta)}</b></span>`).join("")}
@@ -858,7 +789,7 @@ function renderWizard() {
           ${state.beanTierId ? `<span class="chip">${getById(BEAN_TIERS, state.beanTierId).name}</span>` : ""}
           ${state.menuIds.map((id, index) => `<span class="chip ${index === 0 ? "is-accent" : ""}">${getById(MENUS, id).name}</span>`).join("")}
           ${state.ownerRoleId ? `<span class="chip">${getById(OWNER_ROLES, state.ownerRoleId).name}</span>` : ""}
-          ${state.step >= 5 && state.businessTypeId ? `<span class="chip">${getById(BUSINESS_TYPES, state.businessTypeId).name}</span>` : ""}
+          ${step.id === "business" && state.businessTypeId ? `<span class="chip">${getById(BUSINESS_TYPES, state.businessTypeId).name}</span>` : ""}
           ${hint ? `<span class="foot-hint">${hint}</span>` : ""}
         </div>
         <div class="spend-strip" title="지금까지의 개업 지출">
@@ -893,43 +824,6 @@ function renderWizard() {
   }));
   screen.querySelector("#campaign-mode")?.addEventListener("change", (event) => { state.campaignMode = event.target.value; saveProgress(); });
 
-  const nameInput = screen.querySelector("#shop-name-input");
-  if (nameInput) {
-    nameInput.addEventListener("input", () => {
-      state.restaurantName = nameInput.value;
-      const preview = screen.querySelector("#name-preview");
-      if (preview) preview.textContent = nameInput.value.trim() || "간판이 비어 있습니다";
-      const next = screen.querySelector("#wizard-next");
-      if (next) next.disabled = !nameInput.value.trim();
-    });
-    setTimeout(() => nameInput.focus(), 60);
-    screen.querySelectorAll("[data-name-pick]").forEach((button) => button.addEventListener("click", () => {
-      state.restaurantName = button.dataset.namePick;
-      sounds.click();
-      setView("wizard");
-    }));
-  }
-  screen.querySelectorAll("[data-look]").forEach((button) => button.addEventListener("click", () => {
-    state.ownerLookId = button.dataset.look;
-    sounds.click();
-    setView("wizard");
-  }));
-  screen.querySelectorAll("[data-hair]").forEach((button) => button.addEventListener("click", () => {
-    state.ownerHairId = button.dataset.hair;
-    sounds.click();
-    setView("wizard");
-  }));
-  screen.querySelectorAll("[data-stat]").forEach((button) => button.addEventListener("click", () => {
-    const id = button.dataset.stat;
-    const delta = Number(button.dataset.delta);
-    const next = state.ownerStats[id] + delta;
-    const spent = state.ownerStats.kind + state.ownerStats.smart + state.ownerStats.charm;
-    if (next < OWNER_STAT_MIN || next > OWNER_STAT_MAX) return;
-    if (delta > 0 && spent >= OWNER_STAT_POOL) return;
-    state.ownerStats = { ...state.ownerStats, [id]: next };
-    sounds.click();
-    setView("wizard");
-  }));
   screen.querySelectorAll("[data-capital]").forEach((button) => button.addEventListener("click", () => {
     if (state.learning && button.dataset.capital !== "standard") { toast("수업의 공통 자본은 1억 5천만원입니다."); return; }
     state.capitalId = button.dataset.capital;

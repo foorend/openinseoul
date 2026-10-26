@@ -17,7 +17,8 @@ import {
   OWNER_ROLES,
   getById,
 } from "../src/data.js";
-import { phaseAt, hiredLaborCost, RestaurantSimulation, clamp, keyedRandom } from "../src/sim.js";
+import { phaseAt, hiredLaborCost, monthlyFixedCost, RestaurantSimulation, clamp, keyedRandom } from "../src/sim.js";
+import { LOAN_ANNUAL_RATE } from "../src/data.js";
 import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade } from "../src/campaign.js";
 import { compareCondition } from "../src/experiment.js";
 
@@ -728,4 +729,14 @@ test("realistic monthly scale — a cafe does not print money", () => {
     / run.months.reduce((sum, m) => sum + m.revenue, 0);
   // 실제 카페 인건비 밴드: 스페셜티 30~35%, 베이커리 27~30%
   assert.ok(laborShare > 0.25 && laborShare < 0.4, `인건비 비중 ${(laborShare * 100).toFixed(0)}%`);
+});
+
+test("monthly fixed cost is rent plus loaded staff wages, loan interest and bookkeeping", () => {
+  const format = getById(FORMATS, "specialty_cafe");
+  const district = getById(DISTRICTS, "gangnam");
+  const base = { format, district, hourPlan: getById(HOUR_PLANS, "standard"), staffing: getById(STAFFING_PLANS, "full") };
+  const plain = monthlyFixedCost(base);
+  assert.ok(plain > (district.lease.monthlyRent * format.pyeong) / 12, "staff wages are part of the fixed cost");
+  const withLoan = monthlyFixedCost({ ...base, loan: 3000, annualKeeping: 60 });
+  assert.ok(Math.abs(withLoan - plain - ((3000 * LOAN_ANNUAL_RATE) / 12 + 5)) < 1e-9);
 });

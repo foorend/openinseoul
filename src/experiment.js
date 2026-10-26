@@ -1,6 +1,6 @@
-import { DATA_VERSION, HOUR_PLANS, STAFFING_PLANS, OWNER_ROLES, MENUS, getById } from "./data.js?release=20261016a";
-import { RestaurantSimulation, hasScheduledStaff, formatMoney } from "./sim.js?release=20261016a";
-import { buildMonthSummary } from "./campaign.js?release=20261016a";
+import { DATA_VERSION, HOUR_PLANS, STAFFING_PLANS, OWNER_ROLES, MENUS, getById } from "./data.js?release=20261026a";
+import { RestaurantSimulation, hasScheduledStaff, formatMoney } from "./sim.js?release=20261026a";
+import { buildMonthSummary } from "./campaign.js?release=20261026a";
 
 export function experimentChoices(saved, { bakeryGearBought = false } = {}) {
   const data = saved.data;

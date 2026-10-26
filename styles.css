@@ -2262,6 +2262,8 @@ canvas { image-rendering: pixelated; }
 .ct-diff-line i { font-style: normal; font-size: 13.5px; color: var(--steam-dim); }
 .ct-diff-line b { color: var(--clay); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 26px; font-weight: 700; line-height: 1; }
 .ct-loan { font-size: 13px; color: var(--crema); font-variant-numeric: tabular-nums; }
+.ct-runway { font-size: 13px; color: var(--steam-dim); text-align: right; font-variant-numeric: tabular-nums; }
+.ct-runway b { color: var(--crema-soft); font-size: 15px; }
 .ct-loan-btn {
   padding: 6px 10px;
   border: 1px dashed var(--crema);
@@ -2428,6 +2430,8 @@ canvas { image-rendering: pixelated; }
 .capital-list { display: grid; gap: 10px; }
 .setup-note { padding: 20px; margin-top: 20px; background: var(--surface-2); border: 1px solid var(--line); line-height: 1.7; color: var(--steam-dim); }
 .setup-note label { display: grid; gap: 8px; margin-top: 16px; }
+.opening-note strong { display: block; color: var(--steam); font-variant-numeric: tabular-nums; }
+.opening-note p { margin-top: 8px; }
 .setup-note select { width: 100%; padding: 12px; background: var(--ground); border: 1px solid var(--line); }
 .hero-copy #advanced-setup { margin: 18px 0; font-size: 15px; }
 .wizard .repday { padding: 18px; min-height: 88px; }

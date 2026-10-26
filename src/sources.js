@@ -1,4 +1,4 @@
-import { DATA_VERSION, DISTRICTS, GAME_CONFIG, LEASE_RULE, PUBLIC_META, SEOUL_AVERAGE, STORE_SCALE } from "./data.js?release=20261016a";
+import { DATA_VERSION, DISTRICTS, GAME_CONFIG, LEASE_RULE, PUBLIC_META, SEOUL_AVERAGE, STORE_SCALE } from "./data.js?release=20261026a";
 
 const GOLMOK = PUBLIC_META.url;
 const Q = PUBLIC_META.quarter;
@@ -22,6 +22,8 @@ export const SOURCES = [
     rule: "10/20/22/25%와 누진공제 적용. 소규모법인 별도 세율·공제·대표 급여/배당·지방소득세는 미반영. 실제 사업자 유형 추천이 아닙니다." },
   { id: "vat", title: "국세청 · 부가가치세 개요", period: "2026-10-06 확인", kind: "계산 참고", unit: "부가세 포함 수입 만원", url: "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7695&mi=2272",
     rule: "게임은 일반과세 매출세액만 수입÷11로 매달 적립합니다. 실제 납부액은 매출세액−매입세액 등으로 달라지며, 매입세액·간이과세·신고시기는 미반영." },
+  { id: "opening", title: "송파구 보건소 · 식품접객업 영업신고", period: "2026-07-16 수정 · 2026-10-26 확인", kind: "개업 절차 안내", unit: "원", url: "https://www.songpa.go.kr/ehealth/contents.do?key=4616",
+    rule: "휴게음식점은 영업신고 전에 위생교육 6시간(집합교육)을 받고, 신고 때 위생교육필증·건강진단결과서·임대차계약서·신분증을 냅니다. 수수료 증지 28,000원과 면허세(27,000~67,500원)가 듭니다. 게임은 이 비용을 보험과 함께 '개업 행정·보험' 18만원(가정)으로 묶습니다." },
   { id: "scenario", title: "FOOREND · 게임 가정", period: DATA_VERSION, kind: "게임 가정", unit: "돈: 만원 · 시간: 게임 분", url: null,
     rule: "시간대별 유동 분포·손님 구성·평일/주말 비중·권리금·인테리어·메뉴 가격과 원가·구매확률·맛/메뉴 적합도·수수료10.8%·보험9.6%·퇴직적립8.3%·소모품5%·대출6.5%는 게임 가정입니다. 하루 평일/주말 표본×달의 일수로 월을 추정합니다. 주휴수당·가산수당·감가상각·보증금 회수·대출 원금 상환·폐업 청산은 미반영." },
 ];
