@@ -1,7 +1,7 @@
 // OPEN IN SEOUL — Cafe. 금액 단위는 만원.
 // 상권의 임대료·경쟁·수요 수준은 서울시 상권분석서비스 공개 데이터(public-data.js)에서 온다.
 // 손님 행동·시간대 분포·권리금·인테리어·메뉴 등은 실제 창업 상담 모델을 게임으로 옮긴 가정이다.
-import { PUBLIC_DISTRICTS, PUBLIC_META, SEOUL_AVERAGE } from "./public-data.js?release=20261026b";
+import { PUBLIC_DISTRICTS, PUBLIC_META, SEOUL_AVERAGE } from "./public-data.js?release=20261026c";
 export { PUBLIC_META, SEOUL_AVERAGE };
 export const DATA_VERSION = "seoul-cafe-2026.10-v4-public2026q2";
 

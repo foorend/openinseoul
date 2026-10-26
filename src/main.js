@@ -32,16 +32,16 @@ import {
   getById,
   PUBLIC_META,
   SEOUL_AVERAGE,
-} from "./data.js?release=20261026b";
-import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost, hourToClock, monthlyFixedCost } from "./sim.js?release=20261026b";
-import { GameScene, HeroScene } from "./scene.js?release=20261026b";
-import { mountIllustration } from "./visuals.js?release=20261026b";
-import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261026b";
-import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261026b";
-import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261026b";
-import { publicRows, sourceLine, sourceMarkup, survivalFor } from "./sources.js?release=20261026b";
-import { buildCoach, narrateCoach } from "./coach.js?release=20261026b";
-import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261026b";
+} from "./data.js?release=20261026c";
+import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost, hourToClock, monthlyFixedCost } from "./sim.js?release=20261026c";
+import { GameScene, HeroScene } from "./scene.js?release=20261026c";
+import { mountIllustration } from "./visuals.js?release=20261026c";
+import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261026c";
+import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261026c";
+import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261026c";
+import { publicRows, sourceLine, sourceMarkup, survivalFor } from "./sources.js?release=20261026c";
+import { buildCoach, narrateCoach } from "./coach.js?release=20261026c";
+import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261026c";
 
 const screen = document.querySelector("#screen");
 const topbarStatus = document.querySelector("#topbar-status");
@@ -132,17 +132,63 @@ document.querySelector(".topbar-actions").prepend(saveButton);
 setInterval(() => saveProgress(), 5000);
 window.addEventListener("pagehide", () => saveProgress());
 
+// 효과음 파일(tools/sfx.mjs로 만든 assets/sfx/*.mp3)을 먼저 쓰고, 없으면 합성음으로 돌아간다
+const SAMPLE_NAMES = ["click", "good", "bad", "bell", "ambience"];
+
 class SoundManager {
   constructor() {
     this.context = null;
     this.enabled = false;
+    this.buffers = null;
+    this.ambienceSource = null;
   }
 
   async toggle() {
     this.enabled = !this.enabled;
     if (this.enabled && !this.context) this.context = new AudioContext();
     if (this.context?.state === "suspended") await this.context.resume();
+    if (this.enabled && !this.buffers) await this.loadSamples();
+    this.ambience(this.enabled && state.view === "operations");
     return this.enabled;
+  }
+
+  async loadSamples() {
+    this.buffers = {};
+    await Promise.all(SAMPLE_NAMES.map(async (name) => {
+      try {
+        const response = await fetch(`./assets/sfx/${name}.mp3`);
+        if (response.ok) this.buffers[name] = await this.context.decodeAudioData(await response.arrayBuffer());
+      } catch { /* 파일이 없으면 합성음을 쓴다 */ }
+    }));
+  }
+
+  play(name, volume) {
+    const buffer = this.enabled && this.buffers?.[name];
+    if (!buffer) return false;
+    const source = this.context.createBufferSource();
+    const gain = this.context.createGain();
+    source.buffer = buffer;
+    gain.gain.value = volume;
+    source.connect(gain);
+    gain.connect(this.context.destination);
+    source.start();
+    return true;
+  }
+
+  // 영업 화면에서만 작게 깔리는 카페 배경 소음
+  ambience(on) {
+    if (!on) { this.ambienceSource?.stop(); this.ambienceSource = null; return; }
+    const buffer = this.enabled && this.buffers?.ambience;
+    if (!buffer || this.ambienceSource) return;
+    const source = this.context.createBufferSource();
+    const gain = this.context.createGain();
+    source.buffer = buffer;
+    source.loop = true;
+    gain.gain.value = 0.12;
+    source.connect(gain);
+    gain.connect(this.context.destination);
+    source.start();
+    this.ambienceSource = source;
   }
 
   tone(frequency = 440, duration = 0.08, type = "sine", volume = 0.035, delay = 0) {
@@ -161,10 +207,10 @@ class SoundManager {
     oscillator.stop(now + duration + 0.03);
   }
 
-  click() { this.tone(320, 0.055, "square", 0.022); }
-  good() { this.tone(520, 0.08, "sine", 0.03); this.tone(720, 0.12, "sine", 0.025, 0.065); }
-  bad() { this.tone(180, 0.12, "sawtooth", 0.025); }
-  bell() { this.tone(880, 0.13, "triangle", 0.03); this.tone(1174, 0.18, "sine", 0.018, 0.04); }
+  click() { if (!this.play("click", 0.35)) this.tone(320, 0.055, "square", 0.022); }
+  good() { if (!this.play("good", 0.4)) { this.tone(520, 0.08, "sine", 0.03); this.tone(720, 0.12, "sine", 0.025, 0.065); } }
+  bad() { if (!this.play("bad", 0.4)) this.tone(180, 0.12, "sawtooth", 0.025); }
+  bell() { if (!this.play("bell", 0.45)) { this.tone(880, 0.13, "triangle", 0.03); this.tone(1174, 0.18, "sine", 0.018, 0.04); } }
 }
 
 const sounds = new SoundManager();
@@ -270,6 +316,7 @@ window.addEventListener("resize", () => fitScreenToViewport());
 
 function render() {
   document.body.dataset.view = state.view;
+  sounds.ambience(state.view === "operations");
   if (state.view === "landing") renderLanding();
   else if (state.view === "wizard") renderWizard();
   else if (state.view === "brief") renderBrief();
@@ -689,7 +736,10 @@ function renderWizard() {
         selected: state.formatId === format.id,
         disabled: unaffordable,
       });
-    }).join("")}</div>${state.quickSetup && state.formatId ? `<div class="setup-note"><strong>제안 메뉴: ${state.menuIds.map((id) => getById(MENUS, id).name).join(" · ")}</strong><p>다음 화면에서 영업시간을 정하면 첫 영업입니다.</p></div>` : ""}`;
+    }).join("")}</div>${state.formatId ? (() => {
+      const picked = getById(FORMATS, state.formatId);
+      return `<figure class="store3d-wrap"><div class="store3d" id="store3d" role="img" aria-label="${picked.name} ${picked.pyeong}평 ${picked.seats}석 매장 3D 미리보기"></div><figcaption>${picked.name} · ${picked.pyeong}평 · ${picked.seats}석 예시 배치 — 평수·좌석·주방은 게임 설정을 따릅니다. 데스크톱에서는 끌어서 돌려 볼 수 있습니다. 소품 3D 모델은 Meshy AI로 만들었습니다.</figcaption></figure>`;
+    })() : ""}${state.quickSetup && state.formatId ? `<div class="setup-note"><strong>제안 메뉴: ${state.menuIds.map((id) => getById(MENUS, id).name).join(" · ")}</strong><p>다음 화면에서 영업시간을 정하면 첫 영업입니다.</p></div>` : ""}`;
   } else if (step.id === "bean") {
     body = `<div class="choice-grid cols-3">${BEAN_TIERS.map((tier) => choiceCard({
       id: tier.id, attr: "bean", name: tier.name, sub: tier.description,
@@ -805,6 +855,17 @@ function renderWizard() {
 
   clearIllustrations();
   mountStepArt(screen);
+  // 3D 매장 미리보기 — three.js와 모델은 이 화면에서만 불러온다. 다시 그리면 이전 장면을 정리한다.
+  const store3d = screen.querySelector("#store3d");
+  if (store3d) {
+    const loading = new AbortController();
+    let dispose = () => {};
+    illustrationDisposers.push(() => { loading.abort(); dispose(); });
+    import("./store3d.js?release=20261026c")
+      .then(({ mountStore3d }) => mountStore3d(store3d, { format: getById(FORMATS, state.formatId), district: state.districtId, signal: loading.signal }))
+      .then((done) => { if (loading.signal.aborted) done(); else dispose = done; })
+      .catch(() => store3d.closest("figure")?.remove());
+  }
   screen.querySelectorAll("details[data-key]").forEach((details) => details.addEventListener("toggle", () => {
     if (details.open) openDetails.add(details.dataset.key); else openDetails.delete(details.dataset.key);
   }));

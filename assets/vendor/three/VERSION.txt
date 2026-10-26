@@ -1,0 +1,1 @@
+three 0.186.1 (npm, sha512 확인 2026-10-26). three.module.js·three.core.js와 addons 일부만 복사.

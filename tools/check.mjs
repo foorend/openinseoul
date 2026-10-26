@@ -6,7 +6,7 @@ for (const file of readdirSync("src").filter((name) => name.endsWith(".js"))) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 for (const file of ["index.html", "education.html", "tools/viewport.html"]) {
-  for (const match of readFileSync(file, "utf8").matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) {
+  for (const match of readFileSync(file, "utf8").matchAll(/<script\b(?![^>]*type="importmap")[^>]*>([\s\S]*?)<\/script>/g)) {
     const result = spawnSync(process.execPath, ["--input-type=module", "--check"], { input: match[1], encoding: "utf8" });
     if (result.status !== 0) { console.error(`${file}: ${result.stderr}`); process.exit(result.status ?? 1); }
   }
