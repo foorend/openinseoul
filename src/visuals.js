@@ -743,7 +743,7 @@ const BEAN_ART = {
     }
     cremaCup(ctx, w * 0.66, h * 0.62, 1.05, "#B78A55", 0.42, t);
     glowDot(ctx, w * 0.66, h * 0.5, 80, PALETTE.crema, 0.2);
-    caption(ctx, w, "얇은 크레마 · 원가 24%");
+    caption(ctx, w, "얇은 크레마");
   },
   standard(ctx, w, h, t) {
     frame(ctx, w, h, "#251C16", "#120D0A");
@@ -752,7 +752,7 @@ const BEAN_ART = {
     beanBag(ctx, w * 0.3, h * 0.4, w * 0.14, h * 0.36, "#7A5C40", "");
     cremaCup(ctx, w * 0.68, h * 0.6, 1.15, "#C99A57", 0.72, t);
     glowDot(ctx, w * 0.68, h * 0.48, 96, PALETTE.crema, 0.34);
-    caption(ctx, w, "무난한 크레마 · 원가 30%");
+    caption(ctx, w, "무난한 크레마");
   },
   specialty(ctx, w, h, t) {
     frame(ctx, w, h, "#2A1F17", "#130E0B");
@@ -770,7 +770,7 @@ const BEAN_ART = {
     });
     cremaCup(ctx, w * 0.7, h * 0.58, 1.25, "#E0AC5E", 1, t);
     glowDot(ctx, w * 0.7, h * 0.46, 120, PALETTE.crema, 0.5);
-    caption(ctx, w, "두꺼운 크레마 · 원가 38%", PALETTE.crema);
+    caption(ctx, w, "두꺼운 크레마", PALETTE.crema);
   },
 };
 
@@ -1291,7 +1291,7 @@ const REGISTRY = {
   equipment: EQUIPMENT_ART,
 };
 
-import { artReady, coverDraw } from "./art.js?release=20261026a";
+import { artReady, coverDraw } from "./art.js?release=20261026b";
 
 export function drawIllustration(ctx, w, h, kind, id, time, extra) {
   ctx.clearRect(0, 0, w, h);

@@ -25,7 +25,7 @@ import {
   LOAN_ANNUAL_RATE,
   MONTHLY_RATES,
   getById,
-} from "./data.js?release=20261026a";
+} from "./data.js?release=20261026b";
 
 const FORMAT_FIT = {
   solo_cafe: { office_worker: 1, cafe_studier: 0.7, mz_hotple: 0.55, local_resident: 0.82, delivery_customer: 0.6 },

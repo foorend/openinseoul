@@ -2432,6 +2432,7 @@ canvas { image-rendering: pixelated; }
 .setup-note label { display: grid; gap: 8px; margin-top: 16px; }
 .opening-note strong { display: block; color: var(--steam); font-variant-numeric: tabular-nums; }
 .opening-note p { margin-top: 8px; }
+.opening-note ol { margin: 6px 0 0; padding-left: 1.2em; }
 .setup-note select { width: 100%; padding: 12px; background: var(--ground); border: 1px solid var(--line); }
 .hero-copy #advanced-setup { margin: 18px 0; font-size: 15px; }
 .wizard .repday { padding: 18px; min-height: 88px; }
@@ -2657,7 +2658,7 @@ body[data-view="report"] .toast-region, body[data-view="monthClose"] .toast-regi
 @media (max-width: 720px) {
   .wizard-bar { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; }
   .wizard-bar .capital-tracker { grid-column: 1 / -1; }
-  .ct-now { flex-direction: row; align-items: center; justify-content: space-between; }
+  .ct-now { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
   .ct-now strong { font-size: 24px; }
   .ct-diff em, .ct-diff-line i { font-size: 12px; }
   .ct-diff-line b { font-size: 18px; }

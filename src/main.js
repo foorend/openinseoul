@@ -14,7 +14,6 @@ import {
   OWNER_HAIRS,
   CAPITAL_OPTIONS,
   EQUIPMENT_TIERS,
-  RESEARCH_COST,
   LEASE_BASE_PYEONG,
   LOAN_UNIT,
   LOAN_MAX_UNITS,
@@ -33,16 +32,16 @@ import {
   getById,
   PUBLIC_META,
   SEOUL_AVERAGE,
-} from "./data.js?release=20261026a";
-import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost, hourToClock, monthlyFixedCost } from "./sim.js?release=20261026a";
-import { GameScene, HeroScene } from "./scene.js?release=20261026a";
-import { mountIllustration } from "./visuals.js?release=20261026a";
-import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261026a";
-import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261026a";
-import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261026a";
-import { publicRows, sourceLine, sourceMarkup, survivalFor } from "./sources.js?release=20261026a";
-import { buildCoach, narrateCoach } from "./coach.js?release=20261026a";
-import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261026a";
+} from "./data.js?release=20261026b";
+import { RestaurantSimulation, clamp, fitGrade, formatMoney, hiredLaborCost, hourToClock, monthlyFixedCost } from "./sim.js?release=20261026b";
+import { GameScene, HeroScene } from "./scene.js?release=20261026b";
+import { mountIllustration } from "./visuals.js?release=20261026b";
+import { ACHIEVEMENTS, campaignScore, evaluateAchievements, platform } from "./platform.js?release=20261026b";
+import { buildMonthSummary, monthInfo, seasonFactor, yearEndSettlement, yearGrade, yearVerdict } from "./campaign.js?release=20261026b";
+import { compareCondition, experimentChoices, applyCondition, laborTradeoff, compareBudget } from "./experiment.js?release=20261026b";
+import { publicRows, sourceLine, sourceMarkup, survivalFor } from "./sources.js?release=20261026b";
+import { buildCoach, narrateCoach } from "./coach.js?release=20261026b";
+import { QUESTIONS, classCode, scoreQuiz, validateLearning } from "./learning.js?release=20261026b";
 
 const screen = document.querySelector("#screen");
 const topbarStatus = document.querySelector("#topbar-status");
@@ -282,7 +281,7 @@ function render() {
   if (["report", "monthClose", "final"].includes(state.view)) compactReport();
   if (state.learning && state.view !== "landing") screen.querySelector(state.view === "operations" ? ".ledger-card" : "section")?.insertAdjacentHTML("afterbegin", `<div class="source-strip">익명 수업 ${escapeHtml(state.learning.classCode)} · 공통 자본 1억 5천만원 · ${state.learning.goal === "hours" ? "사장 노동시간 비교" : "현금과 손익 구분"} <button class="text-button learning-open" type="button">교육 결과 저장</button></div>`);
   // 화면 아래 출처 바: 지금 화면의 숫자가 어느 공공데이터·가정에서 왔는지 계속 보여 준다.
-  const barDistrictId = state.simulation?.district?.id ?? state.districtId ?? state.selectedDistrictId;
+  const barDistrictId = state.simulation?.district?.id ?? state.districtId;
   if (sourceBar) sourceBar.innerHTML = sourceLine({ view: state.view, stepId: state.view === "wizard" ? activeSteps()[state.step]?.id : null, district: barDistrictId ? getById(DISTRICTS, barDistrictId) : null });
   // 렌더 직후 두 프레임 뒤(폰트·캔버스 마운트 반영 후)에 화면을 맞춘다
   requestAnimationFrame(() => requestAnimationFrame(fitScreenToViewport));
@@ -378,7 +377,7 @@ const WIZARD_STEPS = [
   {
     id: "capital", label: "자본·내 시간", kicker: "01 / YOUR LIMITS",
     title: "얼마를 걸고,", accent: "얼마나 일할까요?",
-    lede: "돈과 사장의 시간은 서로 바꿀 수 있습니다. 먼저 감당할 범위를 정하세요.",
+    lede: "시작 자본과 하루 몇 시간 바에 설지 정합니다. 직원 인건비는 뒤에서 고르는 상권(시급)과 카페 유형이 정하고, 일한 시간은 모두 사장 시급 계산에 들어갑니다.",
   },
   {
     id: "district", label: "상권", kicker: "01 / READ THE CITY",
@@ -435,13 +434,12 @@ function setupCosts() {
   const equipment = getById(EQUIPMENT_TIERS, state.equipmentId);
   const equipmentCost = equipment?.cost ?? 0;
   const beanStock = getById(BEAN_TIERS, state.beanTierId)?.initialStock ?? 0;
-  const researchSpend = (state.researchBought?.length ?? 0) * RESEARCH_COST;
   const checklist = district ? GAME_CONFIG.openingChecklistCost : 0;
   // 베이커리라면 디저트 조달 방식이 집기 비용을 정한다 — 직접 굽기는 오븐·발효기, 납품은 쇼케이스
   const supplyMode = state.formatId === "bakery_cafe" ? getById(SUPPLY_MODES, state.supplyModeId) : null;
   const supplyGear = supplyMode?.gearCost ?? 0;
   const businessSetup = getById(BUSINESS_TYPES, state.businessTypeId)?.setupCost ?? 0;
-  const total = lease + formatCost + equipmentCost + beanStock + researchSpend + checklist + supplyGear + businessSetup;
+  const total = lease + formatCost + equipmentCost + beanStock + checklist + supplyGear + businessSetup;
   const baseCapital = getById(CAPITAL_OPTIONS, state.capitalId)?.amount ?? GAME_CONFIG.startingCash;
   const loan = (state.loanUnits ?? 0) * LOAN_UNIT;
   const capital = baseCapital + loan;
@@ -452,33 +450,40 @@ function setupCosts() {
     annualKeeping: getById(BUSINESS_TYPES, state.businessTypeId)?.annualKeeping ?? 0,
   }) : 0;
   return {
-    district, format, lease, formatCost, equipment, equipmentCost, beanStock, researchSpend,
+    district, format, lease, formatCost, equipment, equipmentCost, beanStock,
     total, capital, baseCapital, loan, remaining: capital - total, monthly,
     lines: [
       deposit ? { label: "보증금 · 계약 끝나면 반환", value: deposit } : null,
       keyMoney ? { label: "권리금 · 회수 불확실", value: keyMoney } : null,
       lease ? { label: "인테리어 · 회수 불가", value: lease - deposit - keyMoney } : null,
-      format ? { label: `${format.name} 시설`, value: formatCost } : null,
+      format ? { label: `${format.name} 설비 공사`, value: formatCost } : null,
       equipment ? { label: equipment.name, value: equipmentCost } : null,
       supplyGear ? { label: supplyMode.gearLabel, value: supplyGear } : null,
       beanStock ? { label: "원두·부자재 선매입", value: beanStock } : null,
-      researchSpend ? { label: `상권 분석 ${state.researchBought.length}부`, value: researchSpend } : null,
       checklist ? { label: "개업 행정·보험", value: checklist } : null,
       businessSetup ? { label: "사업자 설립", value: businessSetup } : null,
     ].filter(Boolean),
   };
 }
 
-// 매출이 하나도 없을 때 남는 운전자금으로 버티는 개월 수
+// 매출이 하나도 없을 때 남는 운전자금으로 버티는 개월 수 — 가게 고정비에 사장 생활비까지 (월 마감 예산과 같은 정의)
 function runwayMonths(costs) {
-  return Math.max(0, costs.remaining / costs.monthly).toFixed(1);
+  return Math.max(0, costs.remaining / (costs.monthly + GAME_CONFIG.ownerLiving)).toFixed(1);
 }
 
 function openingNote(costs) {
+  const plan = getById(HOUR_PLANS, state.hourPlanId ?? "standard");
   return `<div class="setup-note opening-note">
-    <strong>문 여는 날 통장 ${formatMoney(costs.remaining, true)} · 매달 고정비 ${formatMoney(costs.monthly, true)} → 매출이 하나도 없으면 ${runwayMonths(costs)}개월</strong>
-    <p>고정비는 월세 + 직원 인건비(4대보험·퇴직 적립 포함) + 대출 이자 + 기장료입니다. 보증금은 계약이 끝나야 돌아와서 운전자금에 넣지 않았습니다.</p>
-    <p>개업 전 행정: 위생교육 6시간(영업신고 전, 집합교육) → 보건증(건강진단결과서) → 구청 영업신고(위생교육필증·보건증·임대차계약서·신분증, 수수료 28,000원과 면허세) → 사업자등록. 비용은 '개업 행정·보험'에 묶었습니다.</p>
+    <strong>문 여는 날 통장 ${formatMoney(costs.remaining, true)} · 가게 고정비 ${formatMoney(costs.monthly, true)} + 내 생활비 ${formatMoney(GAME_CONFIG.ownerLiving, true)}(가정) → 매출이 하나도 없으면 ${runwayMonths(costs)}개월</strong>
+    <p>가게 고정비는 월세 + 직원 인건비(4대보험·퇴직 적립 포함, ${plan.name} ${plan.open}–${plan.close}시 기준) + 대출 이자 + 기장료입니다. 전기·통신 요금과 재료비는 매출에 비례해 잡아 여기엔 없습니다. 보증금은 계약이 끝나야 돌아와 운전자금에 넣지 않았습니다. 게임은 계약한 날 바로 문을 연다고 가정합니다(공사 기간 월세 미반영).</p>
+    <p>개업 전 행정</p>
+    <ol>
+      <li>위생교육 6시간(영업신고 전, 집합교육)</li>
+      <li>보건증(건강진단결과서)</li>
+      <li>구청 영업신고: 위생교육필증·보건증·임대차계약서·신분증 · 수수료 28,000원 + 면허세 27,000~67,500원(송파구 보건소, 2026-07-16)</li>
+      <li>사업자등록</li>
+    </ol>
+    <p>위생교육비·보건증·보험은 게임 가정으로 '개업 행정·보험' 18만원에 묶었습니다.</p>
   </div>`;
 }
 
@@ -581,7 +586,6 @@ function districtStepMarkup() {
   const lease = selected.lease;
   const { area, dongs } = selected.public;
   const survival = survivalFor(selected);
-  const bought = state.researchBought.includes(selected.id);
   const more = (key, summary, inner) => `<details class="detail-more" data-key="${key}" ${openDetails.has(key) ? "open" : ""}><summary>${summary}</summary><div class="detail-more-body">${inner}</div></details>`;
   const row = (title, text, extra = "") => `<div class="research-row ${extra}"><span class="research-title">${title}</span><span class="research-text ${extra === "is-locked" ? "is-blurred" : ""}" ${extra === "is-locked" ? 'aria-hidden="true"' : ""}>${text}</span></div>`;
   return `
@@ -591,7 +595,7 @@ function districtStepMarkup() {
           id: district.id, attr: "district", name: district.name, sub: district.tagline,
           art: { kind: "district", id: district.id },
           meta: [`12평 월세 ${formatMoney(district.lease.monthlyRent, true)}`, `점포당 월매출 ${formatMoney(district.public.area.salesPerStoreMonthly / 10000, true)}`],
-          selected: district.id === state.selectedDistrictId,
+          selected: district.id === state.districtId,
           size: "is-compact",
         })).join("")}
       </div>
@@ -614,13 +618,7 @@ function districtStepMarkup() {
               <div><span>월세</span><b>${formatMoney(lease.monthlyRent)}</b></div>
               <div><span>인테리어</span><b>${formatMoney(lease.fitout)}</b></div>
             </div><p class="lease-note">12평 기준·평수 비례. 월세는 공공데이터, 보증금은 월세 10개월(관행 가정), 권리금·인테리어는 게임 가정입니다.</p>`)}
-          ${more("notes", "현장 메모 · 게임 가정", bought
-            ? Object.values(selected.research).map((insight) => row(insight.title, insight.text, "is-open")).join("")
-            : `${Object.values(selected.research).map((insight) => row(insight.title, insight.text, "is-locked")).join("")}
-              <button class="research-buy" id="buy-research" type="button">
-                <b>📝 현장 메모 열기 — ${formatMoney(RESEARCH_COST)}</b>
-                <span>권리금·매출 흐름·시급에 대한 현장 감각(게임 가정)입니다. 공공데이터는 무료로 공개되어 있습니다.</span>
-              </button>`)}
+          ${more("notes", "상권 메모 · 게임 가정(카페 운영자 확인 전)", Object.values(selected.research).map((insight) => row(insight.title, insight.text, "is-open")).join(""))}
         </div>
       </aside>
     </div>`;
@@ -628,6 +626,9 @@ function districtStepMarkup() {
 
 function renderWizard() {
   const steps = activeSteps();
+  // 아직 끝나지 않은 첫 단계보다 앞으로는 못 간다 — 레일 점프·예전 저장 복원으로 단계를 건너뛰지 않게
+  const firstOpen = steps.findIndex((item) => !stepComplete(item.id));
+  if (firstOpen !== -1 && state.step > firstOpen) state.step = firstOpen;
   if (state.step >= steps.length) state.step = steps.length - 1;
   const step = steps[state.step];
   const costs = setupCosts();
@@ -657,7 +658,7 @@ function renderWizard() {
   if (step.id === "capital") {
     body = `<div class="quick-grid"><section><h2>시작 자본</h2><div class="capital-list">${CAPITAL_OPTIONS.map((option) => `<button class="repday ${state.capitalId === option.id ? "is-selected" : ""}" data-capital="${option.id}" type="button" ${state.learning && option.id !== "standard" ? "disabled" : ""}><b>${option.name} · ${formatMoney(option.amount)}</b><span>${option.description}</span></button>`).join("")}</div></section>
       <section><h2>사장 근무 예산</h2><div class="capital-list">${OWNER_ROLES.map((role) => `<button class="repday ${state.ownerRoleId === role.id ? "is-selected" : ""}" data-role="${role.id}" type="button"><b>하루 ${role.hoursPerDay}시간 · ${role.name}</b><span>${role.description}</span></button>`).join("")}</div></section></div>
-      <div class="setup-note">${state.quickSetup ? "<p>표준 원두·신품 집기·개인사업자로 시작합니다. 메뉴는 매장 유형에 맞춰 제안하고, 다음 경영 계획에서 바꿀 수 있습니다.</p>" : ""}<label>플레이 방식 <select id="campaign-mode"><option value="chapters" ${state.campaignMode === "chapters" ? "selected" : ""}>3챕터 · 1/4/9월에 결정, 나머지 달 자동 정산</option><option value="full" ${state.campaignMode === "full" ? "selected" : ""}>12개월 · 매달 직접 결정</option></select></label></div>`;
+      ${state.quickSetup ? `<div class="setup-note"><p>표준 원두 ${formatMoney(costs.beanStock, true)}·신품 집기 ${formatMoney(costs.equipmentCost, true)}·개인사업자로 시작합니다(운전자금에서 이미 뺐습니다). 메뉴는 매장 유형에 맞춰 제안하고, 다음 경영 계획에서 바꿀 수 있습니다.</p></div>` : ""}`;
   } else if (step.id === "district") {
     body = districtStepMarkup();
   } else if (step.id === "format") {
@@ -688,7 +689,7 @@ function renderWizard() {
         selected: state.formatId === format.id,
         disabled: unaffordable,
       });
-    }).join("")}</div>${state.quickSetup && state.formatId ? `<div class="setup-note"><strong>제안 메뉴: ${state.menuIds.map((id) => getById(MENUS, id).name).join(" · ")}</strong><p>표준 원두·집기와 개업비까지 포함한 운전자금 ${formatMoney(costs.remaining)}. 다음 화면에서 영업시간을 정하면 첫 영업입니다.</p></div>` : ""}`;
+    }).join("")}</div>${state.quickSetup && state.formatId ? `<div class="setup-note"><strong>제안 메뉴: ${state.menuIds.map((id) => getById(MENUS, id).name).join(" · ")}</strong><p>다음 화면에서 영업시간을 정하면 첫 영업입니다.</p></div>` : ""}`;
   } else if (step.id === "bean") {
     body = `<div class="choice-grid cols-3">${BEAN_TIERS.map((tier) => choiceCard({
       id: tier.id, attr: "bean", name: tier.name, sub: tier.description,
@@ -741,7 +742,7 @@ function renderWizard() {
     body = `<div class="choice-grid cols-3">${BUSINESS_TYPES.map((type) => choiceCard({
       id: type.id, attr: "business", name: type.name, sub: `${type.description}<br /><em class="advice">${type.advice}</em>`,
       art: { kind: "business", id: type.id },
-      meta: [type.setupCost ? `설립 ${formatMoney(type.setupCost, true)}` : "설립비 없음", `기장 ${formatMoney(type.annualKeeping, true)}/년`],
+      meta: [type.setupCost ? `설립 ${formatMoney(type.setupCost, true)}` : "설립비 없음", `기장료(세무 장부 대행) ${formatMoney(type.annualKeeping, true)}/년`],
       selected: state.businessTypeId === type.id,
     })).join("")}</div>`;
   }
@@ -761,11 +762,11 @@ function renderWizard() {
       <header class="wizard-bar">
         <button class="back-control" id="wizard-back" type="button"><span aria-hidden="true">←</span>${state.step === 0 ? "처음으로" : steps[state.step - 1].label}</button>
         <details class="setup-steps"><summary>${state.step + 1}/${steps.length} · ${step.label} <small>전체 단계</small></summary><ol class="step-rail">
-          ${steps.map((item, index) => `<li class="${index === state.step ? "is-current" : ""} ${index < state.step || stepComplete(item.id) ? "is-done" : ""}"><button data-step="${index}" type="button" ${index > state.step && !stepComplete(step.id) ? "disabled" : ""}><b>${String(index + 1).padStart(2, "0")}</b><span>${item.label}</span></button></li>`).join("")}
+          ${steps.map((item, index) => `<li class="${index === state.step ? "is-current" : ""} ${index < state.step || stepComplete(item.id) ? "is-done" : ""}"><button data-step="${index}" type="button" ${firstOpen !== -1 && index > firstOpen ? "disabled" : ""}><b>${String(index + 1).padStart(2, "0")}</b><span>${item.label}</span></button></li>`).join("")}
         </ol></details>
         <div class="capital-tracker ${budgetDelta < 0 ? "is-flash" : ""}">
-          <div class="ct-now"><span class="ct-label">남는<br />운전자금</span><strong class="${costs.remaining < 300 ? "is-danger" : ""}">${formatMoney(costs.remaining)}</strong></div>
-          ${costs.monthly ? `<div class="ct-runway" title="월세 + 직원 인건비(4대보험·퇴직 적립 포함) + 대출 이자 + 기장료">매출 0원이면 <b>${runwayMonths(costs)}개월</b> 버팀 · 월 고정비 ${formatMoney(costs.monthly, true)}</div>` : ""}
+          <div class="ct-now"><span class="ct-label">남는 <br />운전자금</span><strong class="${costs.remaining < 300 ? "is-danger" : ""}">${formatMoney(costs.remaining)}</strong></div>
+          ${costs.monthly ? `<div class="ct-runway" title="가게 고정비(월세 + 직원 인건비·4대보험·퇴직 적립 + 대출 이자 + 기장료) + 사장 생활비 ${formatMoney(GAME_CONFIG.ownerLiving, true)}(게임 가정)">매출 0원이면 <b>${runwayMonths(costs)}개월</b> 버팀 · 고정비 ${formatMoney(costs.monthly, true)} + 생활비 ${formatMoney(GAME_CONFIG.ownerLiving, true)}</div>` : ""}
           ${pageDiffLines.length ? `<div class="ct-diff">
             <em>이 페이지에서 ${formatMoney(state.pageStart.remaining)} →</em>
             ${pageDiffLines.map((line) => `<span class="ct-diff-line"><i>${line.label}</i><b>−${formatMoney(line.delta)}</b></span>`).join("")}
@@ -819,10 +820,9 @@ function renderWizard() {
   document.querySelector("#wizard-next").addEventListener("click", advanceStep);
   screen.querySelectorAll("[data-step]").forEach((button) => button.addEventListener("click", () => {
     const index = Number(button.dataset.step);
-    if (index > state.step && !stepComplete(activeSteps()[state.step].id)) return;
+    if (firstOpen !== -1 && index > firstOpen) return;
     goToStep(index);
   }));
-  screen.querySelector("#campaign-mode")?.addEventListener("change", (event) => { state.campaignMode = event.target.value; saveProgress(); });
 
   screen.querySelectorAll("[data-capital]").forEach((button) => button.addEventListener("click", () => {
     if (state.learning && button.dataset.capital !== "standard") { toast("수업의 공통 자본은 1억 5천만원입니다."); return; }
@@ -830,17 +830,6 @@ function renderWizard() {
     sounds.click();
     setView("wizard");
   }));
-  document.querySelector("#buy-research")?.addEventListener("click", () => {
-    const districtId = state.selectedDistrictId;
-    if (state.researchBought.includes(districtId)) return;
-    const costsNow = setupCosts();
-    if (costsNow.remaining < RESEARCH_COST) { toast("자본이 부족합니다. 분석은 포기하고 감으로 가야 할 수도요."); sounds.bad(); return; }
-    state.researchBought = [...state.researchBought, districtId];
-    openDetails.add("notes");
-    sounds.good();
-    toast(`${getById(DISTRICTS, districtId).shortName} 현장 메모 열기 — ${formatMoney(RESEARCH_COST)} 차감`);
-    setView("wizard");
-  });
   screen.querySelectorAll("[data-district]").forEach((button) => button.addEventListener("click", () => {
     state.selectedDistrictId = button.dataset.district;
     state.districtId = button.dataset.district;
@@ -890,6 +879,7 @@ function renderWizard() {
 }
 
 function startCampaign() {
+  if (activeSteps().some((item) => !stepComplete(item.id))) { toast("빠진 준비 단계가 있습니다"); return; }
   if (state.learning && !state.learning.pre) { openQuiz("pre", startCampaign); return; }
   if (state.learning) state.capitalId = "standard";
   const { district, format: baseFormat, remaining } = setupCosts();
@@ -989,7 +979,9 @@ function renderBrief() {
   const dayName = DAY_NAMES[(day - 1) % 7];
   const isOpeningDay = day === 1;
   const plan = getById(HOUR_PLANS, state.hourPlanId);
-  const laborFor = (candidate) => hiredLaborCost(sim.format, sim.district, candidate, sim.supplyMode, sim.staffing, sim.hires);
+  // 이번 달 이벤트 인건비 배수와 알바 추가분까지 — 엔진이 장부에 쓰는 값(sim.js fixedLabor)과 같게
+  const laborScale = resolveMonthEffects().labor ?? 1;
+  const laborFor = (candidate) => hiredLaborCost(sim.format, sim.district, candidate, sim.supplyMode, sim.staffing, sim.hires) * laborScale + sim.getEffects().dailyLabor;
   topbarStatus.innerHTML = statusMarkup(`${monthInfo(state.campaign?.month ?? 1).name} ${isWeekend ? "주말" : "평일"} · 아침 브리핑`);
 
   screen.innerHTML = `
@@ -1059,7 +1051,7 @@ function renderBrief() {
 
           <section class="brief-card ledger-preview">
             <span class="card-label">오늘 확정 고정비</span>
-            <div class="preview-row"><span>일 인건비 <small>보험·적립은 월말 별도</small></span><b>${formatMoney(laborFor(plan))}</b></div>
+            <div class="preview-row"><span>일 인건비 <small>보험·적립은 월말 별도${laborScale !== 1 ? " · 이번 달 이벤트 반영" : ""}</small></span><b>${formatMoney(laborFor(plan))}</b></div>
             <div class="preview-row"><span>월세 1/30</span><b>${formatMoney((sim.district.lease.monthlyRent * (sim.format.pyeong ?? 12)) / 12 / 30)}</b></div>
             <div class="preview-row is-total"><span>문 열기 전 이미 나간 돈</span><b>${formatMoney(laborFor(plan) + (sim.district.lease.monthlyRent * (sim.format.pyeong ?? 12)) / 12 / 30)}</b></div>
             <p class="preview-note">영업 전 확정 비용입니다. 손익분기 매출이 아닙니다. 재료비·수수료·세금 적립과 월 정산 비용도 부담해야 이익이 남습니다.</p>
@@ -1149,8 +1141,7 @@ function renderBrief() {
 function renderOperations() {
   const sim = state.simulation;
   const snapshot = sim.snapshot();
-  const dongs = sim.district.public?.dongs ?? [];
-  const rentBadge = dongs.length ? `${dongs[0]}${dongs.length > 1 ? " 외" : ""} 실측` : "공공데이터";
+  const rentBadge = "공공데이터";
   topbarStatus.innerHTML = statusMarkup(dayStatus(snapshot));
   reportReadyNotified = false;
   lastPhaseId = snapshot.phase.id;
@@ -2190,7 +2181,7 @@ function mountBudgetComparison() {
   const campaign = state.campaign;
   const month = campaign.months.at(-1);
   const initial = campaign.initialSettings ?? state;
-  const defaults = campaign.budgetInputs ?? { capital: getById(CAPITAL_OPTIONS, initial.capitalId ?? "standard").amount + (initial.loanUnits ?? 0) * LOAN_UNIT, investment: campaign.setupOutflow, rent: month.costs.rent, living: 250 };
+  const defaults = campaign.budgetInputs ?? { capital: getById(CAPITAL_OPTIONS, initial.capitalId ?? "standard").amount + (initial.loanUnits ?? 0) * LOAN_UNIT, investment: campaign.setupOutflow, rent: month.costs.rent, living: GAME_CONFIG.ownerLiving };
   for (const [key, value] of Object.entries(defaults)) if (form.elements.namedItem(key)) form.elements.namedItem(key).value = Number(value).toFixed(2);
   const output = document.querySelector("#budget-results");
   const read = () => Object.fromEntries(["capital", "investment", "rent", "living"].map(key => [key, form.elements.namedItem(key).valueAsNumber]));
@@ -2796,6 +2787,8 @@ function renderYearEnd() {
     Object.assign(state, structuredClone(campaign.initialSettings));
     state.selectedActions = []; state.everFired = false; state.bakeryGearBought = false; state.pendingExperiment = null;
     startCampaign();
+    // 예전 저장이라 빠진 준비 단계가 있으면 끝난 캠페인 위에 그리지 않고 위저드로 보낸다
+    if (state.campaign === campaign) { state.simulation = null; state.campaign = null; setView("wizard"); return; }
     if (campaign.initialEventChoices) { state.campaign.eventChoices = structuredClone(campaign.initialEventChoices); setView("brief"); }
   });
   document.querySelector("#restart-game").addEventListener("click", () => {

@@ -1,7 +1,7 @@
 // OPEN IN SEOUL — Cafe. 금액 단위는 만원.
 // 상권의 임대료·경쟁·수요 수준은 서울시 상권분석서비스 공개 데이터(public-data.js)에서 온다.
 // 손님 행동·시간대 분포·권리금·인테리어·메뉴 등은 실제 창업 상담 모델을 게임으로 옮긴 가정이다.
-import { PUBLIC_DISTRICTS, PUBLIC_META, SEOUL_AVERAGE } from "./public-data.js?release=20261026a";
+import { PUBLIC_DISTRICTS, PUBLIC_META, SEOUL_AVERAGE } from "./public-data.js?release=20261026b";
 export { PUBLIC_META, SEOUL_AVERAGE };
 export const DATA_VERSION = "seoul-cafe-2026.10-v4-public2026q2";
 
@@ -35,7 +35,7 @@ export const OWNER_STAT_MIN = 1;
 export const CAPITAL_OPTIONS = [
   { id: "tight", name: "월급 모은 전부", icon: "🪙", amount: 9000, description: "9,000만원. 보증금 내고 나면 숨이 짧습니다. 한 달만 삐끗해도 흔들려요." },
   { id: "standard", name: "퇴직금까지 합쳐서", icon: "💼", amount: 15000, description: "1억 5천. 개업비를 뺀 운전자금과 월 적자에 따라 버틸 수 있는 기간이 달라집니다." },
-  { id: "backed", name: "부모님 찬스", icon: "🏦", amount: 24000, description: "2억 4천. 여유는 있지만, 갚아야 할 돈이라는 걸 잊으면 안 됩니다." },
+  { id: "backed", name: "부모님 찬스", icon: "🏦", amount: 24000, description: "2억 4천. 가족에게 빌린 돈이 포함됩니다. 게임은 이자·상환을 계산하지 않으니, 갚을 계획은 따로 세우세요." },
 ];
 
 // ── 월 단위 인력 시장 ─────────────────────────────────────────
@@ -57,7 +57,7 @@ export const EQUIPMENT_TIERS = [
   {
     id: "standard", name: "신품 표준 세트", icon: "⚙️", cost: 700,
     cookSpeed: 1.0, quality: 0,
-    description: "국산 신품 2그룹 머신과 표준 집기. 기준이 되는 선택입니다.",
+    description: "신품 2그룹 머신·그라인더·제빙기·냉장고 기본 구성. 기준이 되는 선택입니다.",
   },
   {
     id: "premium", name: "하이엔드 세트", icon: "✨", cost: 1200,
@@ -108,6 +108,7 @@ export const GAME_CONFIG = {
   taxRate: 1 / 11,     // 부가세 포함 매출에서 매출세액 적립. 매입세액/간이과세 미반영
   utilityRate: 0.05,   // 공과금·복리후생 5%
   severanceRate: 0.1,  // 시급의 10% 매월 퇴직금 적립
+  ownerLiving: 250,   // 사장 생활비 월 250만(게임 가정). 버팀 개월과 월 마감 예산이 같이 쓴다
   minimumWage: 10320,  // 2026 최저임금위원회 시간급. 사장 시간가치의 비교 기준
   demandScale: 0.22,   // 상권 유동 → 잠재고객 변환 계수. 밸런스 테스트로 고정된 값이다.
 };
@@ -164,7 +165,7 @@ export const BEAN_TIERS = [
   {
     id: "standard", name: "스탠다드 블렌드", icon: "◇",
     costRatio: 0.17, initialStock: 70, quality: 0,
-    description: "무난한 로스터리 블렌드. 원가 30% 안팎, 특별한 감점도 가점도 없습니다.",
+    description: "무난한 로스터리 블렌드. 특별한 감점도 가점도 없습니다.",
   },
   {
     id: "specialty", name: "스페셜티 싱글오리진", icon: "◆",
@@ -191,22 +192,22 @@ export const SUPPLY_MODES = [
   },
 ];
 
-// 본인 노동 — 사장이 몇 시간 일할지가 인건비이자 삶의 질이다.
+// 본인 노동 — 사장 노동시간과 피크 제조 속도를 정한다.
 export const OWNER_ROLES = [
   {
     id: "fulltime", name: "풀타임 사장 바리스타", icon: "◉",
     hoursPerDay: 12, capacityBonus: 1.25, schedule: "all",
-    description: "오픈부터 마감까지 바 안에 선다. 인건비를 아끼는 대신 당신의 시간이 들어간다.",
+    description: "오픈부터 마감까지 바에 선다. 바에 서면 제조가 최대 40% 빨라지고, 여기에 25%가 더 붙는다. 대신 내 시간이 가장 많이 든다.",
   },
   {
     id: "peak", name: "피크타임만 선다", icon: "◐",
     hoursPerDay: 6, capacityBonus: 1.25, schedule: "peak",
-    description: "점심 러시와 저녁 피크에만 바에 선다. 나머지는 직원에게 맡긴다.",
+    description: "점심·저녁 피크에만 바에 선다. 바에 서면 제조가 최대 40% 빨라지고, 피크 때는 25%가 더 붙는다.",
   },
   {
     id: "manager", name: "오너 매니저", icon: "○",
     hoursPerDay: 2, capacityBonus: 1, schedule: "none",
-    description: "운영과 숫자만 챙긴다. 제조는 전부 직원 몫 — 인건비가 그대로 청구된다.",
+    description: "운영과 숫자를 챙기고 바에는 하루 2시간만 선다. 바에 서면 제조가 최대 40% 빨라진다(추가 보너스 없음).",
   },
 ];
 
@@ -873,7 +874,7 @@ export const MONTH_EVENTS = [
       prompt: "눈이 그치지 않습니다.",
       options: [
         { id: "shovel", name: "가게 앞을 직접 치운다", detail: "비용 없음 · 우리 가게 앞만은 걸을 수 있게 됩니다. 수요 일부 회복.", effects: { demand: 1.22 } },
-        { id: "close_early", name: "일찍 닫는다", detail: "인건비를 아낍니다. 오늘 매출은 포기합니다.", effects: { demand: 0.75, labor: 0.7 } },
+        { id: "close_early", name: "일찍 닫는다", detail: "이번 달 내내 적용 · 손님 −25% · 인건비 −30%. 매출 일부를 포기합니다.", effects: { demand: 0.75, labor: 0.7 } },
       ],
     },
   },
